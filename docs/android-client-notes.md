@@ -1,0 +1,94 @@
+# Android Client Notes
+
+This project is based on the upstream `tmux-browser` documents under
+`docs/`, especially:
+
+- `docs/api.md`
+- `docs/superpowers/specs/2026-04-17-browser-tmux-dashboard-design.md`
+- `docs/superpowers/specs/2026-04-21-pty-streaming-terminal-design.md`
+- `docs/superpowers/specs/2026-04-30-harmonyos-mobile-tmux-manager-design.md`
+
+## What The Upstream Docs Say
+
+The mobile design document is HarmonyOS-first and recommends a native ArkTS
+client with these modules:
+
+- connection profile store
+- session API client
+- terminal WebSocket client
+- terminal core
+- terminal view
+- shortcut bar
+- session list and terminal screens
+
+It also says Android is second priority and WebView terminal rendering is out of
+scope for that first HarmonyOS version.
+
+## Android Request Reconciliation
+
+The current request is different from that document in two important ways:
+
+- target platform is Android first
+- remote testing requires online APK builds and app-side update checks
+
+For that reason, this repository starts with an Android API-client MVP. The
+existing server is expected to already be running on port 3000. The app calls
+the server HTTP API and terminal WebSocket directly instead of loading the
+existing browser UI.
+
+This is not yet the full native-terminal architecture described by the HarmonyOS
+design document, but every exposed Android feature is native and calls the
+server API directly. There is no WebView fallback.
+
+## Backend Contract
+
+The Android client must not change the server protocol.
+
+HTTP:
+
+- `GET /api/sessions`
+- `POST /api/sessions`
+- `DELETE /api/sessions/:name`
+- `POST /api/sessions/:name/input`
+
+WebSocket:
+
+- `/ws/terminal`
+- `/ws/events`
+- `attach`
+- `input`
+- `resize`
+- `scroll`
+- `clear-history`
+
+The server remains the source of truth. Closing the app or terminal viewer must
+not kill a tmux session.
+
+## Current MVP
+
+Implemented now:
+
+- configurable base URL, defaulting to `http://127.0.0.1:3000`
+- support for Tailscale URLs such as `http://100.x.y.z:3000`
+- native session list from `GET /api/sessions`
+- create, rename, command send, split, pane select, pane kill, pin, mute, and
+  kill session through documented session/preference endpoints
+- basic live terminal through `/ws/terminal`
+- native event stream through `/ws/events`
+- bottom shortcut bar for `Esc`, `Tab`, `Ctrl+C`, arrows, page keys, and paste
+- shortcut delivery through the terminal WebSocket `input` message
+- native action center for health, server status, timeline, preferences, kanban
+  projects, group messages, hook events, image file/URL upload, image preview
+  metadata, and native image preview display
+- GitHub Actions APK build
+- release manifest `latest.json`
+- APK download, SHA-256 verification, and installer handoff
+
+## Native Roadmap
+
+To converge with the upstream mobile design, the next implementation should add
+native Android modules in this order:
+
+1. richer native layouts for kanban, group messages, timeline, and preferences
+2. `TerminalCore` with ANSI parsing, cursor state, colors, and dirty rows
+3. configurable shortcut bar backed directly by WebSocket `input`
