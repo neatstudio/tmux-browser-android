@@ -6,55 +6,65 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Show runner environment
+      - name: Build APK without external actions
         run: |
-          pwd
-          java -version || true
-          ls -la
+          set -eu
 
-      - name: Set up JDK
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
+          if [ ! -d .git ]; then
+            SERVER_URL="${GITHUB_SERVER_URL:-https://gitea.neatcn.com}"
+            REPOSITORY="${GITHUB_REPOSITORY:-tmux/tmux-browser-android}"
+            TOKEN="${GITHUB_TOKEN:-${GITEA_TOKEN:-}}"
+            if [ -n "${TOKEN}" ]; then
+              AUTH_SERVER_URL="$(printf '%s' "${SERVER_URL}" | sed "s#https://#https://x-access-token:${TOKEN}@#")"
+              REPO_URL="${AUTH_SERVER_URL}/${REPOSITORY}.git"
+            else
+              REPO_URL="${SERVER_URL}/${REPOSITORY}.git"
+            fi
+            git clone "${REPO_URL}" .
+            git checkout "${GITHUB_SHA:-main}"
+          fi
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+          if ! command -v java >/dev/null 2>&1; then
+            if command -v sudo >/dev/null 2>&1; then
+              sudo apt-get update
+              sudo apt-get install -y openjdk-17-jdk unzip curl
+            else
+              apt-get update
+              apt-get install -y openjdk-17-jdk unzip curl
+            fi
+          fi
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.10.2"
+          export GRADLE_HOME="${PWD}/.ci/gradle-8.10.2"
+          if [ ! -x "${GRADLE_HOME}/bin/gradle" ]; then
+            mkdir -p .ci
+            curl -fsSL -o .ci/gradle.zip https://services.gradle.org/distributions/gradle-8.10.2-bin.zip
+            unzip -q .ci/gradle.zip -d .ci
+          fi
+          export PATH="${GRADLE_HOME}/bin:${PATH}"
 
-      - name: Install Android packages
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+          export ANDROID_HOME="${PWD}/.ci/android-sdk"
+          export ANDROID_SDK_ROOT="${ANDROID_HOME}"
+          export CMDLINE_TOOLS="${ANDROID_HOME}/cmdline-tools/latest"
+          if [ ! -x "${CMDLINE_TOOLS}/bin/sdkmanager" ]; then
+            mkdir -p "${ANDROID_HOME}/cmdline-tools" .ci
+            curl -fsSL -o .ci/android-tools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+            unzip -q .ci/android-tools.zip -d "${ANDROID_HOME}/cmdline-tools"
+            mv "${ANDROID_HOME}/cmdline-tools/cmdline-tools" "${CMDLINE_TOOLS}"
+          fi
+          export PATH="${CMDLINE_TOOLS}/bin:${ANDROID_HOME}/platform-tools:${PATH}"
 
-      - name: Set version
-        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
           VERSION_NAME="0.1.${GITHUB_RUN_NUMBER:-0}"
           VERSION_CODE=$((2000 + ${GITHUB_RUN_NUMBER:-0}))
-          echo "VERSION_NAME=${VERSION_NAME}" >> "${GITHUB_ENV}"
-          echo "VERSION_CODE=${VERSION_CODE}" >> "${GITHUB_ENV}"
-
-      - name: Build APK
-        run: |
           gradle :app:assembleDebug \
             -PversionCode="${VERSION_CODE}" \
             -PversionName="${VERSION_NAME}" \
             -PrepoSlug="neatstudio/tmux-browser-android"
 
-      - name: Prepare artifact
-        run: |
           mkdir -p release
           APK_PATH="$(find app/build/outputs/apk -name '*.apk' | sort | tail -n 1)"
           cp "${APK_PATH}" release/tmux-android-gitea.apk
+          ls -lh release/tmux-android-gitea.apk
           sha256sum release/tmux-android-gitea.apk
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: tmux-android-gitea
-          path: release/tmux-android-gitea.apk
