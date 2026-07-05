@@ -3,6 +3,51 @@ name: Gitea Android APK
 on: [push]
 
 jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe runner
+        run: |
+          pwd
+          command -v sh
+          command -v git || true
+          command -v curl || true
+          command -v unzip || true
+          command -v java || true
+
+  checkout:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test repository checkout
+        run: |
+          set -eu
+          if ! command -v git >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1; then
+            if command -v sudo >/dev/null 2>&1; then
+              sudo apt-get update
+              sudo apt-get install -y git curl unzip
+            else
+              apt-get update
+              apt-get install -y git curl unzip
+            fi
+          fi
+
+          WORKDIR="${PWD}/source"
+          rm -rf "${WORKDIR}"
+          mkdir -p "${WORKDIR}"
+          SERVER_URL="${GITHUB_SERVER_URL:-https://gitea.neatcn.com}"
+          REPOSITORY="${GITHUB_REPOSITORY:-tmux/tmux-browser-android}"
+          TOKEN="${GITHUB_TOKEN:-${GITEA_TOKEN:-}}"
+          if [ -n "${TOKEN}" ]; then
+            AUTH_SERVER_URL="$(printf '%s' "${SERVER_URL}" | sed "s#https://#https://x-access-token:${TOKEN}@#")"
+            REPO_URL="${AUTH_SERVER_URL}/${REPOSITORY}.git"
+          else
+            REPO_URL="${SERVER_URL}/${REPOSITORY}.git"
+          fi
+          git clone "${REPO_URL}" "${WORKDIR}"
+          cd "${WORKDIR}"
+          git checkout "${GITHUB_SHA:-main}"
+          test -f app/build.gradle.kts
+
   build:
     runs-on: ubuntu-latest
     steps:
