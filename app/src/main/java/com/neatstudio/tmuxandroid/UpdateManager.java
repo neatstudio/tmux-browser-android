@@ -10,6 +10,7 @@ import android.os.Build;
 import android.provider.Settings;
 import android.widget.Toast;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
@@ -103,6 +104,9 @@ final class UpdateManager {
     private ReleaseInfo fetchReleaseInfo(String manifestUrl) throws Exception {
         String json = readText(manifestUrl);
         JSONObject root = new JSONObject(json);
+        if (root.has("assets") && root.has("tag_name")) {
+            return fetchReleaseInfoFromReleaseApi(root);
+        }
         return new ReleaseInfo(
                 root.getInt("versionCode"),
                 root.optString("versionName", ""),
@@ -110,6 +114,40 @@ final class UpdateManager {
                 root.optString("sha256", ""),
                 root.optString("releasePageUrl", "")
         );
+    }
+
+    private ReleaseInfo fetchReleaseInfoFromReleaseApi(JSONObject release) throws Exception {
+        JSONArray assets = release.getJSONArray("assets");
+        String manifestUrl = findAssetUrl(assets, "latest.json");
+        String apkUrl = findAssetUrl(assets, "tmux-android.apk");
+        if (manifestUrl.isEmpty()) {
+            throw new IllegalStateException("Release has no latest.json");
+        }
+        ReleaseInfo info = fetchReleaseInfo(manifestUrl);
+        if (apkUrl.isEmpty()) {
+            return info;
+        }
+        return new ReleaseInfo(
+                info.versionCode,
+                info.versionName,
+                apkUrl,
+                info.sha256,
+                release.optString("html_url", info.releasePageUrl)
+        );
+    }
+
+    private String findAssetUrl(JSONArray assets, String name) {
+        for (int index = 0; index < assets.length(); index++) {
+            JSONObject asset = assets.optJSONObject(index);
+            if (asset == null || !name.equals(asset.optString("name"))) {
+                continue;
+            }
+            String url = asset.optString("browser_download_url", "");
+            if (!url.isEmpty()) {
+                return url;
+            }
+        }
+        return "";
     }
 
     private String readText(String url) throws Exception {

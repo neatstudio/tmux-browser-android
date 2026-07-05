@@ -5,13 +5,13 @@ plugins {
 }
 
 val repoSlug = providers.gradleProperty("repoSlug")
-    .orElse("neatstudio/tmux-android")
+    .orElse("neatstudio/tmux-browser-android")
 val defaultServerUrl = providers.gradleProperty("defaultServerUrl")
     .orElse("http://100.89.0.116:3000")
 val defaultUpdateUrl = providers.gradleProperty("defaultUpdateUrl")
     .orElse("https://github.com/${repoSlug.get()}/releases/latest/download/latest.json")
 val defaultGiteaUpdateUrl = providers.gradleProperty("defaultGiteaUpdateUrl")
-    .orElse("https://gitea.neatcn.com/tmux/tmux-browser-android/releases/latest/download/latest.json")
+    .orElse("https://gitea.neatcn.com/api/v1/repos/tmux/tmux-browser-android/releases/latest")
 
 val signingProps = Properties()
 val signingFile = rootProject.file("signing.properties")
