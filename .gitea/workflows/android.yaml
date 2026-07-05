@@ -50,6 +50,28 @@ jobs:
           git checkout "${GITHUB_SHA:-main}"
           test -f app/build.gradle.kts
 
+  tools:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require basic tools
+        run: |
+          command -v git
+          command -v curl
+          command -v unzip
+
+  lsremote:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test authenticated git access
+        env:
+          CLONE_TOKEN: ${{ secrets.TMUX_GITEA_TOKEN }}
+        run: |
+          set -eu
+          SERVER_URL="${GITHUB_SERVER_URL:-https://gitea.neatcn.com}"
+          REPOSITORY="${GITHUB_REPOSITORY:-tmux/tmux-browser-android}"
+          REPO_URL="$(printf '%s' "${SERVER_URL}" | sed "s#https://#https://gouki:${CLONE_TOKEN}@#")/${REPOSITORY}.git"
+          git ls-remote "${REPO_URL}" HEAD
+
   secret:
     runs-on: ubuntu-latest
     steps:
