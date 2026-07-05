@@ -5,8 +5,6 @@ on: [push]
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/cirruslabs/android-sdk:35
     steps:
       - name: Build APK
         env:
@@ -18,8 +16,11 @@ jobs:
             apt-get update
             apt-get install -y git curl unzip
           fi
+          if ! command -v java >/dev/null 2>&1; then
+            apt-get update
+            apt-get install -y openjdk-17-jdk-headless
+          fi
           java -version
-          sdkmanager --version
 
           WORKDIR="${PWD}/source"
           rm -rf "${WORKDIR}"
@@ -38,10 +39,16 @@ jobs:
           fi
           export PATH="${GRADLE_HOME}/bin:${PATH}"
 
-          export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/opt/android-sdk-linux}}"
+          export ANDROID_HOME="${PWD}/.ci/android-sdk"
           export ANDROID_SDK_ROOT="${ANDROID_HOME}"
           export CMDLINE_TOOLS="${ANDROID_HOME}/cmdline-tools/latest"
-          export PATH="${CMDLINE_TOOLS}/bin:${ANDROID_HOME}/platform-tools:${ANDROID_HOME}/tools/bin:${PATH}"
+          if [ ! -x "${CMDLINE_TOOLS}/bin/sdkmanager" ]; then
+            mkdir -p "${ANDROID_HOME}/cmdline-tools"
+            curl -fsSL -o .ci/android-tools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+            unzip -q .ci/android-tools.zip -d "${ANDROID_HOME}/cmdline-tools"
+            mv "${ANDROID_HOME}/cmdline-tools/cmdline-tools" "${CMDLINE_TOOLS}"
+          fi
+          export PATH="${CMDLINE_TOOLS}/bin:${ANDROID_HOME}/platform-tools:${PATH}"
 
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
