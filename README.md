@@ -77,9 +77,12 @@ Publish a test build by pushing a `v*` tag. That creates a GitHub Release with:
 ```text
 https://github.com/neatstudio/tmux-browser-android/releases/latest/download/tmux-android.apk
 https://github.com/neatstudio/tmux-browser-android/releases/latest/download/latest.json
-https://gitea.neatcn.com/tmux/tmux-browser-android/releases/latest/download/tmux-android.apk
-https://gitea.neatcn.com/tmux/tmux-browser-android/releases/latest/download/latest.json
 ```
+
+Those GitHub links are the stable public install/update channel. Gitea releases
+are mirrored for internal tracking, but the current Gitea org/repo visibility
+keeps anonymous release downloads behind login, so phones should use GitHub for
+no-login install and in-app updates.
 
 Plain branch builds only create Actions artifacts; they are useful for CI
 verification, but releases are the stable download/update channel.
@@ -126,13 +129,26 @@ The default update manifest is:
 https://github.com/neatstudio/tmux-browser-android/releases/latest/download/latest.json
 ```
 
-The Gitea mirror is:
+The public manual APK download is:
 
 ```text
-https://gitea.neatcn.com/tmux/tmux-browser-android/releases/latest/download/latest.json
+https://github.com/neatstudio/tmux-browser-android/releases/latest/download/tmux-android.apk
 ```
 
 The app tries the selected update source first, then falls back to the GitHub
-and Gitea mirrors.
+manifest and the Gitea release API. GitHub is the reliable no-login source today.
+The Gitea API endpoint is:
 
-The workflow uploads both the APK and `latest.json` to each release.
+```text
+https://gitea.neatcn.com/api/v1/repos/tmux/tmux-browser-android/releases/latest
+```
+
+In the app:
+
+- Tap `Update` on the main screen to check `latest.json`, download the APK,
+  verify SHA-256, and open Android's installer.
+- Open `More` -> `Open APK download` to download the current public APK in a
+  browser.
+- Open `More` -> `Permissions / update status` to see the installed version,
+  update manifest, APK URL, install permission state, and a `Check update`
+  button.

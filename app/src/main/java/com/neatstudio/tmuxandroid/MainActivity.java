@@ -3,6 +3,7 @@ package com.neatstudio.tmuxandroid;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -463,6 +464,7 @@ public final class MainActivity extends Activity {
                 "Upload image URL",
                 "Image preview info",
                 "Open image preview",
+                "Open APK download",
                 "Update source",
                 "Permissions / update status"
         };
@@ -525,9 +527,12 @@ public final class MainActivity extends Activity {
                             promptOpenImagePreview();
                             break;
                         case 18:
-                            showUpdateSourcePicker();
+                            openExternalUrl(BuildConfig.DEFAULT_APK_URL);
                             break;
                         case 19:
+                            showUpdateSourcePicker();
+                            break;
+                        case 20:
                             showPermissionsAndUpdateStatus();
                             break;
                         default:
@@ -914,12 +919,28 @@ public final class MainActivity extends Activity {
 
     private void showPermissionsAndUpdateStatus() {
         StringBuilder text = new StringBuilder();
+        text.append("Installed app: ")
+                .append(BuildConfig.VERSION_NAME)
+                .append(" (")
+                .append(BuildConfig.VERSION_CODE)
+                .append(")\n");
         text.append("Server: ").append(getServerUrl()).append('\n');
-        text.append("Selected update manifest: ")
+        text.append('\n');
+        text.append("Manual APK download:\n")
+                .append(BuildConfig.DEFAULT_APK_URL)
+                .append('\n');
+        text.append("Release page:\n")
+                .append(BuildConfig.DEFAULT_RELEASE_PAGE_URL)
+                .append('\n');
+        text.append('\n');
+        text.append("In-app update:\n");
+        text.append("Tap Update. The app reads latest.json, downloads the APK, verifies SHA-256, then opens Android's installer.\n");
+        text.append("Selected manifest:\n")
                 .append(prefs.getString("update_url", BuildConfig.DEFAULT_UPDATE_URL))
                 .append('\n');
-        text.append("GitHub mirror: ").append(BuildConfig.DEFAULT_UPDATE_URL).append('\n');
-        text.append("Gitea mirror: ").append(BuildConfig.DEFAULT_GITEA_UPDATE_URL).append('\n');
+        text.append("GitHub manifest:\n").append(BuildConfig.DEFAULT_UPDATE_URL).append('\n');
+        text.append("Gitea release API:\n").append(BuildConfig.DEFAULT_GITEA_UPDATE_URL).append('\n');
+        text.append('\n');
         text.append("Network: manifest permission, no runtime grant required\n");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             text.append("Install unknown apps: ")
@@ -942,8 +963,16 @@ public final class MainActivity extends Activity {
                 .setMessage(text.toString())
                 .setNegativeButton("Close", null)
                 .setNeutralButton("Install permission", (dialog, which) -> openInstallPermissionSettings())
-                .setPositiveButton("Notify permission", (dialog, which) -> requestNotificationPermission())
+                .setPositiveButton("Check update", (dialog, which) -> updateManager.check(true))
                 .show();
+    }
+
+    private void openExternalUrl(String url) {
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+        } catch (ActivityNotFoundException error) {
+            showMessage("No app can open URL");
+        }
     }
 
     private void showUpdateSourcePicker() {
