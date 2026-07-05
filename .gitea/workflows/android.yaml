@@ -2,16 +2,11 @@ name: Gitea Android APK
 
 on: [push]
 
-permissions:
-  contents: read
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Build APK without external actions
-        env:
-          GITEA_JOB_TOKEN: ${{ secrets.GITEA_TOKEN }}
         run: |
           set -eu
 
@@ -31,7 +26,7 @@ jobs:
             mkdir -p "${WORKDIR}"
             SERVER_URL="${GITHUB_SERVER_URL:-https://gitea.neatcn.com}"
             REPOSITORY="${GITHUB_REPOSITORY:-tmux/tmux-browser-android}"
-            TOKEN="${GITEA_JOB_TOKEN:-${GITHUB_TOKEN:-}}"
+            TOKEN="${GITHUB_TOKEN:-${GITEA_TOKEN:-}}"
             if [ -n "${TOKEN}" ]; then
               AUTH_SERVER_URL="$(printf '%s' "${SERVER_URL}" | sed "s#https://#https://x-access-token:${TOKEN}@#")"
               REPO_URL="${AUTH_SERVER_URL}/${REPOSITORY}.git"
