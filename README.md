@@ -14,6 +14,7 @@ APIs directly:
   and kill session through HTTP API
 - open one live terminal viewer through `/ws/terminal`
 - native `/ws/events` listener for session invalidation and hook notifications
+- GitHub and Gitea update manifest mirrors with fallback
 - native API action center for health, server status, timeline, preferences,
   kanban projects, group messages, hook events, image file/URL upload, image
   preview info, and native image preview display
@@ -76,6 +77,8 @@ Publish a test build by pushing a `v*` tag. That creates a GitHub Release with:
 ```text
 https://github.com/neatstudio/tmux-browser-android/releases/latest/download/tmux-android.apk
 https://github.com/neatstudio/tmux-browser-android/releases/latest/download/latest.json
+https://gitea.neatcn.com/tmux/tmux-browser-android/releases/latest/download/tmux-android.apk
+https://gitea.neatcn.com/tmux/tmux-browser-android/releases/latest/download/latest.json
 ```
 
 Plain branch builds only create Actions artifacts; they are useful for CI
@@ -122,5 +125,14 @@ The default update manifest is:
 ```text
 https://github.com/neatstudio/tmux-browser-android/releases/latest/download/latest.json
 ```
+
+The Gitea mirror is:
+
+```text
+https://gitea.neatcn.com/tmux/tmux-browser-android/releases/latest/download/latest.json
+```
+
+The app tries the selected update source first, then falls back to the GitHub
+and Gitea mirrors.
 
 The workflow uploads both the APK and `latest.json` to each release.

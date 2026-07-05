@@ -21,6 +21,7 @@ import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
 import android.widget.EditText;
@@ -133,7 +134,22 @@ public final class MainActivity extends Activity {
         statusText.setBackgroundColor(Color.rgb(29, 34, 41));
         statusText.setSingleLine(true);
         setStatus("Ready");
+        applySystemBarInsets(root);
         return root;
+    }
+
+    private void applySystemBarInsets(View view) {
+        view.setOnApplyWindowInsetsListener((target, insets) -> {
+            target.setPadding(
+                    0,
+                    insets.getSystemWindowInsetTop(),
+                    0,
+                    insets.getSystemWindowInsetBottom()
+            );
+            return insets;
+        });
+        view.requestApplyInsets();
+        view.post(view::requestApplyInsets);
     }
 
     private void renderSessionScreen() {
@@ -169,10 +185,13 @@ public final class MainActivity extends Activity {
 
     private LinearLayout createServerBar() {
         LinearLayout toolbar = new LinearLayout(this);
-        toolbar.setOrientation(LinearLayout.HORIZONTAL);
-        toolbar.setGravity(Gravity.CENTER_VERTICAL);
+        toolbar.setOrientation(LinearLayout.VERTICAL);
         toolbar.setPadding(dp(8), dp(6), dp(8), dp(6));
         toolbar.setBackgroundColor(Color.rgb(17, 20, 24));
+
+        LinearLayout urlRow = new LinearLayout(this);
+        urlRow.setOrientation(LinearLayout.HORIZONTAL);
+        urlRow.setGravity(Gravity.CENTER_VERTICAL);
 
         urlField = new EditText(this);
         urlField.setSingleLine(true);
@@ -190,11 +209,20 @@ public final class MainActivity extends Activity {
             }
             return false;
         });
-        toolbar.addView(urlField, new LinearLayout.LayoutParams(0, dp(42), 1));
-        toolbar.addView(toolbarButton("Go", view -> saveServerAndRefresh()));
-        toolbar.addView(toolbarButton("New", view -> promptCreateSession()));
-        toolbar.addView(toolbarButton("Update", view -> updateManager.check(true)));
-        toolbar.addView(toolbarButton("More", view -> showMainActions()));
+        urlRow.addView(urlField, new LinearLayout.LayoutParams(0, dp(44), 1));
+        urlRow.addView(toolbarButton("Go", view -> saveServerAndRefresh()));
+
+        LinearLayout actionRow = new LinearLayout(this);
+        actionRow.setOrientation(LinearLayout.HORIZONTAL);
+        actionRow.setGravity(Gravity.CENTER_VERTICAL);
+        actionRow.setPadding(0, dp(6), 0, 0);
+        actionRow.addView(toolbarButton("New", view -> promptCreateSession()));
+        actionRow.addView(toolbarButton("Refresh", view -> refreshSessions()));
+        actionRow.addView(toolbarButton("Update", view -> updateManager.check(true)));
+        actionRow.addView(toolbarButton("More", view -> showMainActions()));
+
+        toolbar.addView(urlRow, matchWrap());
+        toolbar.addView(actionRow, matchWrap());
         return toolbar;
     }
 
@@ -435,6 +463,7 @@ public final class MainActivity extends Activity {
                 "Upload image URL",
                 "Image preview info",
                 "Open image preview",
+                "Update source",
                 "Permissions / update status"
         };
         new AlertDialog.Builder(this)
@@ -496,6 +525,9 @@ public final class MainActivity extends Activity {
                             promptOpenImagePreview();
                             break;
                         case 18:
+                            showUpdateSourcePicker();
+                            break;
+                        case 19:
                             showPermissionsAndUpdateStatus();
                             break;
                         default:
@@ -883,9 +915,11 @@ public final class MainActivity extends Activity {
     private void showPermissionsAndUpdateStatus() {
         StringBuilder text = new StringBuilder();
         text.append("Server: ").append(getServerUrl()).append('\n');
-        text.append("Update manifest: ")
+        text.append("Selected update manifest: ")
                 .append(prefs.getString("update_url", BuildConfig.DEFAULT_UPDATE_URL))
                 .append('\n');
+        text.append("GitHub mirror: ").append(BuildConfig.DEFAULT_UPDATE_URL).append('\n');
+        text.append("Gitea mirror: ").append(BuildConfig.DEFAULT_GITEA_UPDATE_URL).append('\n');
         text.append("Network: manifest permission, no runtime grant required\n");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             text.append("Install unknown apps: ")
@@ -910,6 +944,31 @@ public final class MainActivity extends Activity {
                 .setNeutralButton("Install permission", (dialog, which) -> openInstallPermissionSettings())
                 .setPositiveButton("Notify permission", (dialog, which) -> requestNotificationPermission())
                 .show();
+    }
+
+    private void showUpdateSourcePicker() {
+        String[] items = {
+                "GitHub: " + BuildConfig.DEFAULT_UPDATE_URL,
+                "Gitea: " + BuildConfig.DEFAULT_GITEA_UPDATE_URL,
+                "Custom URL"
+        };
+        new AlertDialog.Builder(this)
+                .setTitle("Update source")
+                .setItems(items, (dialog, which) -> {
+                    if (which == 0) {
+                        setUpdateUrl(BuildConfig.DEFAULT_UPDATE_URL);
+                    } else if (which == 1) {
+                        setUpdateUrl(BuildConfig.DEFAULT_GITEA_UPDATE_URL);
+                    } else {
+                        promptText("Custom update manifest", "https://.../latest.json", prefs.getString("update_url", BuildConfig.DEFAULT_UPDATE_URL), this::setUpdateUrl);
+                    }
+                })
+                .show();
+    }
+
+    private void setUpdateUrl(String url) {
+        prefs.edit().putString("update_url", url).apply();
+        showMessage("Update source: " + url);
     }
 
     private void openInstallPermissionSettings() {

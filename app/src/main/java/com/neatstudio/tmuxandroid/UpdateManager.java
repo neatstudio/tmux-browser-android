@@ -19,6 +19,9 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -41,12 +44,12 @@ final class UpdateManager {
     }
 
     void check(boolean userInitiated) {
-        String manifestUrl = prefs.getString("update_url", BuildConfig.DEFAULT_UPDATE_URL);
+        List<String> manifestUrls = getUpdateManifestUrls();
         callback.onChecking(true);
         postMessage("Checking update...");
         executor.execute(() -> {
             try {
-                ReleaseInfo info = fetchReleaseInfo(manifestUrl);
+                ReleaseInfo info = fetchFirstReleaseInfo(manifestUrls);
                 if (info.versionCode <= BuildConfig.VERSION_CODE) {
                     postMessage("Already up to date: " + BuildConfig.VERSION_NAME);
                     return;
@@ -59,6 +62,42 @@ final class UpdateManager {
                 activity.runOnUiThread(() -> callback.onChecking(false));
             }
         });
+    }
+
+    private List<String> getUpdateManifestUrls() {
+        LinkedHashSet<String> urls = new LinkedHashSet<>();
+        addUrl(urls, prefs.getString("update_url", BuildConfig.DEFAULT_UPDATE_URL));
+        addUrl(urls, BuildConfig.DEFAULT_UPDATE_URL);
+        addUrl(urls, BuildConfig.DEFAULT_GITEA_UPDATE_URL);
+        return new ArrayList<>(urls);
+    }
+
+    private void addUrl(LinkedHashSet<String> urls, String url) {
+        if (url != null && !url.trim().isEmpty()) {
+            urls.add(url.trim());
+        }
+    }
+
+    private ReleaseInfo fetchFirstReleaseInfo(List<String> manifestUrls) throws Exception {
+        Exception lastError = null;
+        for (String manifestUrl : manifestUrls) {
+            try {
+                postMessage("Checking " + hostLabel(manifestUrl) + "...");
+                return fetchReleaseInfo(manifestUrl);
+            } catch (Exception error) {
+                lastError = error;
+                postMessage(hostLabel(manifestUrl) + " failed");
+            }
+        }
+        throw lastError == null ? new IllegalStateException("No update source configured") : lastError;
+    }
+
+    private String hostLabel(String url) {
+        try {
+            return new URL(url).getHost();
+        } catch (Exception ignored) {
+            return url;
+        }
     }
 
     private ReleaseInfo fetchReleaseInfo(String manifestUrl) throws Exception {

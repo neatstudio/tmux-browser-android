@@ -10,6 +10,8 @@ val defaultServerUrl = providers.gradleProperty("defaultServerUrl")
     .orElse("http://100.89.0.116:3000")
 val defaultUpdateUrl = providers.gradleProperty("defaultUpdateUrl")
     .orElse("https://github.com/${repoSlug.get()}/releases/latest/download/latest.json")
+val defaultGiteaUpdateUrl = providers.gradleProperty("defaultGiteaUpdateUrl")
+    .orElse("https://gitea.neatcn.com/tmux/tmux-browser-android/releases/latest/download/latest.json")
 
 val signingProps = Properties()
 val signingFile = rootProject.file("signing.properties")
@@ -30,6 +32,7 @@ android {
 
         buildConfigField("String", "DEFAULT_SERVER_URL", "\"${defaultServerUrl.get()}\"")
         buildConfigField("String", "DEFAULT_UPDATE_URL", "\"${defaultUpdateUrl.get()}\"")
+        buildConfigField("String", "DEFAULT_GITEA_UPDATE_URL", "\"${defaultGiteaUpdateUrl.get()}\"")
     }
 
     buildFeatures {
