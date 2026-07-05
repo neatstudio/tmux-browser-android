@@ -40,7 +40,7 @@ jobs:
           REPOSITORY="${GITHUB_REPOSITORY:-tmux/tmux-browser-android}"
           TOKEN="${CLONE_TOKEN:-${GITHUB_TOKEN:-${GITEA_TOKEN:-}}}"
           if [ -n "${TOKEN}" ]; then
-            AUTH_SERVER_URL="$(printf '%s' "${SERVER_URL}" | sed "s#https://#https://x-access-token:${TOKEN}@#")"
+            AUTH_SERVER_URL="$(printf '%s' "${SERVER_URL}" | sed "s#https://#https://gouki:${TOKEN}@#")"
             REPO_URL="${AUTH_SERVER_URL}/${REPOSITORY}.git"
           else
             REPO_URL="${SERVER_URL}/${REPOSITORY}.git"
@@ -49,6 +49,15 @@ jobs:
           cd "${WORKDIR}"
           git checkout "${GITHUB_SHA:-main}"
           test -f app/build.gradle.kts
+
+  secret:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check clone token secret
+        env:
+          CLONE_TOKEN: ${{ secrets.TMUX_GITEA_TOKEN }}
+        run: |
+          test -n "${CLONE_TOKEN:-}"
 
   build:
     runs-on: ubuntu-latest
@@ -77,7 +86,7 @@ jobs:
             REPOSITORY="${GITHUB_REPOSITORY:-tmux/tmux-browser-android}"
             TOKEN="${CLONE_TOKEN:-${GITHUB_TOKEN:-${GITEA_TOKEN:-}}}"
             if [ -n "${TOKEN}" ]; then
-              AUTH_SERVER_URL="$(printf '%s' "${SERVER_URL}" | sed "s#https://#https://x-access-token:${TOKEN}@#")"
+              AUTH_SERVER_URL="$(printf '%s' "${SERVER_URL}" | sed "s#https://#https://gouki:${TOKEN}@#")"
               REPO_URL="${AUTH_SERVER_URL}/${REPOSITORY}.git"
             else
               REPO_URL="${SERVER_URL}/${REPOSITORY}.git"
