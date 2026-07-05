@@ -6,7 +6,9 @@ The server project is expected to already be running on port 3000. This app does
 not host or load the existing web UI. It calls the existing HTTP and WebSocket
 APIs directly:
 
-- server URL management for `http://127.0.0.1:3000` and Tailscale `100.x.y.z:3000`
+- server URL management for Tailscale `100.x.y.z:3000` APIs
+- quick server selectors for `100.89.0.2`, `100.89.0.4`, `100.89.0.9`,
+  `100.89.0.11`, and `100.89.0.116`
 - native tmux session list
 - create, rename, send command, split pane, select pane, kill pane, pin, mute,
   and kill session through HTTP API
@@ -24,14 +26,18 @@ APIs directly:
 Default:
 
 ```text
-http://127.0.0.1:3000
+http://100.89.0.116:3000
 ```
 
-On a physical Android device, `127.0.0.1` means the phone itself. For remote
-testing, install Tailscale on the phone and use:
+On a physical Android device, `127.0.0.1` means the phone itself. The app
+therefore defaults to Tailscale and includes quick selectors for:
 
 ```text
-http://100.x.y.z:3000
+http://100.89.0.2:3000
+http://100.89.0.4:3000
+http://100.89.0.9:3000
+http://100.89.0.11:3000
+http://100.89.0.116:3000
 ```
 
 The upstream server should stay bound to localhost or a private Tailscale IP.
@@ -65,8 +71,15 @@ Create the base64 value from your release keystore:
 base64 -w 0 tmux-android-release.jks
 ```
 
-Publish a test build by running the `Android APK` workflow manually with
-`publish_release=true`, or by pushing a `v*` tag.
+Publish a test build by pushing a `v*` tag. That creates a GitHub Release with:
+
+```text
+https://github.com/neatstudio/tmux-browser-android/releases/latest/download/tmux-android.apk
+https://github.com/neatstudio/tmux-browser-android/releases/latest/download/latest.json
+```
+
+Plain branch builds only create Actions artifacts; they are useful for CI
+verification, but releases are the stable download/update channel.
 
 Unsigned/debug workflow artifacts are useful only for smoke testing install and
 launch. Automatic in-place updates require release APKs signed with the same
@@ -87,6 +100,16 @@ kanban projects, preferences, timeline events, group messages, and image metadat
 currently use native forms plus native JSON detail dialogs; image preview uses a
 native `ImageView`. The app does not load the browser UI.
 
+## Permissions
+
+The app needs network access and package install handoff for updates. Android
+does not ask at runtime for normal internet access. Android 8+ requires the user
+to allow this app to install unknown apps before automatic update installation
+can continue. Android 13+ may ask for notification permission.
+
+SMS permission is intentionally not requested because tmux-browser-android does
+not read or send SMS.
+
 ## Auto Update
 
 Normal Android apps cannot silently replace themselves. This app checks the
@@ -97,7 +120,7 @@ install, and Android 8+ may require allowing this app to install unknown apps.
 The default update manifest is:
 
 ```text
-https://github.com/<owner>/<repo>/releases/latest/download/latest.json
+https://github.com/neatstudio/tmux-browser-android/releases/latest/download/latest.json
 ```
 
 The workflow uploads both the APK and `latest.json` to each release.

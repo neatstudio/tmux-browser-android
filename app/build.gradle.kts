@@ -7,7 +7,7 @@ plugins {
 val repoSlug = providers.gradleProperty("repoSlug")
     .orElse("neatstudio/tmux-android")
 val defaultServerUrl = providers.gradleProperty("defaultServerUrl")
-    .orElse("http://127.0.0.1:3000")
+    .orElse("http://100.89.0.116:3000")
 val defaultUpdateUrl = providers.gradleProperty("defaultUpdateUrl")
     .orElse("https://github.com/${repoSlug.get()}/releases/latest/download/latest.json")
 

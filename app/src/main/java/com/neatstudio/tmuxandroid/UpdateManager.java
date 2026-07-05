@@ -43,13 +43,15 @@ final class UpdateManager {
     void check(boolean userInitiated) {
         String manifestUrl = prefs.getString("update_url", BuildConfig.DEFAULT_UPDATE_URL);
         callback.onChecking(true);
+        postMessage("Checking update...");
         executor.execute(() -> {
             try {
                 ReleaseInfo info = fetchReleaseInfo(manifestUrl);
                 if (info.versionCode <= BuildConfig.VERSION_CODE) {
-                    postMessage(userInitiated ? "Already up to date" : null);
+                    postMessage("Already up to date: " + BuildConfig.VERSION_NAME);
                     return;
                 }
+                postMessage("Update found: " + info.versionName);
                 activity.runOnUiThread(() -> showUpdateDialog(info));
             } catch (Exception error) {
                 postMessage(userInitiated ? "Update check failed: " + error.getMessage() : null);
@@ -95,10 +97,12 @@ final class UpdateManager {
 
     private void downloadAndInstall(ReleaseInfo info) {
         callback.onChecking(true);
+        postMessage("Downloading " + info.versionName + "...");
         executor.execute(() -> {
             try {
                 File apk = downloadApk(info);
                 if (!info.sha256.isEmpty()) {
+                    postMessage("Verifying APK...");
                     String actual = sha256(apk);
                     if (!actual.equalsIgnoreCase(info.sha256)) {
                         throw new IllegalStateException("APK SHA-256 mismatch");
@@ -145,6 +149,7 @@ final class UpdateManager {
             );
             activity.startActivity(settingsIntent);
             Toast.makeText(activity, "Allow installs, then run update again", Toast.LENGTH_LONG).show();
+            postMessage("Install permission required");
             return;
         }
 
@@ -159,6 +164,7 @@ final class UpdateManager {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         try {
             activity.startActivity(intent);
+            postMessage("Opened Android package installer");
         } catch (ActivityNotFoundException error) {
             postMessage("No package installer found");
         }

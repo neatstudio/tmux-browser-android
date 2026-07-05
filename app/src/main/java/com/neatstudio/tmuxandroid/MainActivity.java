@@ -1,5 +1,6 @@
 package com.neatstudio.tmuxandroid;
 
+import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ClipData;
@@ -7,6 +8,7 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
@@ -14,6 +16,7 @@ import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
@@ -45,6 +48,15 @@ public final class MainActivity extends Activity {
     private static final int TERMINAL_COLS = 96;
     private static final int TERMINAL_ROWS = 32;
     private static final int MAX_TERMINAL_CHARS = 120_000;
+    private static final String OLD_LOCAL_DEFAULT_URL = "http://127.0.0.1:3000";
+    private static final String DEFAULT_TAILSCALE_URL = "http://100.89.0.116:3000";
+    private static final String[] SERVER_PROFILES = {
+            "http://100.89.0.116:3000",
+            "http://100.89.0.2:3000",
+            "http://100.89.0.4:3000",
+            "http://100.89.0.9:3000",
+            "http://100.89.0.11:3000"
+    };
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private SharedPreferences prefs;
@@ -71,6 +83,14 @@ public final class MainActivity extends Activity {
             prefs.edit()
                     .putString("server_url", BuildConfig.DEFAULT_SERVER_URL)
                     .putString("update_url", BuildConfig.DEFAULT_UPDATE_URL)
+                    .apply();
+        } else if (
+                OLD_LOCAL_DEFAULT_URL.equals(prefs.getString("server_url", ""))
+                        && !prefs.getBoolean("tailscale_defaults_applied_v1", false)
+        ) {
+            prefs.edit()
+                    .putString("server_url", DEFAULT_TAILSCALE_URL)
+                    .putBoolean("tailscale_defaults_applied_v1", true)
                     .apply();
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
@@ -121,6 +141,10 @@ public final class MainActivity extends Activity {
         activeSessionName = null;
         root.removeAllViews();
         root.addView(createServerBar(), matchWrap());
+        root.addView(createServerProfileBar(), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(46)
+        ));
         root.addView(progressBar, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(3)
@@ -172,6 +196,47 @@ public final class MainActivity extends Activity {
         toolbar.addView(toolbarButton("Update", view -> updateManager.check(true)));
         toolbar.addView(toolbarButton("More", view -> showMainActions()));
         return toolbar;
+    }
+
+    private HorizontalScrollView createServerProfileBar() {
+        HorizontalScrollView scroller = new HorizontalScrollView(this);
+        scroller.setHorizontalScrollBarEnabled(false);
+        scroller.setBackgroundColor(Color.rgb(22, 27, 34));
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(6), dp(4), dp(6), dp(4));
+
+        for (String url : SERVER_PROFILES) {
+            String label = url.replace("http://", "").replace(":3000", "");
+            Button button = toolbarButton(label, view -> selectServer(url));
+            button.setMinWidth(dp(92));
+            button.setMinimumWidth(dp(92));
+            row.addView(button, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+            ));
+        }
+        row.addView(toolbarButton("Custom", view -> {
+            urlField.requestFocus();
+            urlField.selectAll();
+        }));
+
+        scroller.addView(row, new HorizontalScrollView.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+        ));
+        return scroller;
+    }
+
+    private void selectServer(String url) {
+        prefs.edit().putString("server_url", url).apply();
+        api = new SessionApiClient(url);
+        urlField.setText(url);
+        setStatus("Selected " + url);
+        connectAppEvents();
+        refreshSessions();
     }
 
     private void refreshSessions() {
@@ -369,7 +434,8 @@ public final class MainActivity extends Activity {
                 "Upload image file",
                 "Upload image URL",
                 "Image preview info",
-                "Open image preview"
+                "Open image preview",
+                "Permissions / update status"
         };
         new AlertDialog.Builder(this)
                 .setTitle("Native API actions")
@@ -428,6 +494,9 @@ public final class MainActivity extends Activity {
                             break;
                         case 17:
                             promptOpenImagePreview();
+                            break;
+                        case 18:
+                            showPermissionsAndUpdateStatus();
                             break;
                         default:
                             break;
@@ -809,6 +878,58 @@ public final class MainActivity extends Activity {
                         basePath.getText().toString().trim()
                 ))
                 .show();
+    }
+
+    private void showPermissionsAndUpdateStatus() {
+        StringBuilder text = new StringBuilder();
+        text.append("Server: ").append(getServerUrl()).append('\n');
+        text.append("Update manifest: ")
+                .append(prefs.getString("update_url", BuildConfig.DEFAULT_UPDATE_URL))
+                .append('\n');
+        text.append("Network: manifest permission, no runtime grant required\n");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            text.append("Install unknown apps: ")
+                    .append(getPackageManager().canRequestPackageInstalls() ? "allowed" : "not allowed")
+                    .append('\n');
+        } else {
+            text.append("Install unknown apps: allowed by Android version\n");
+        }
+        if (Build.VERSION.SDK_INT >= 33) {
+            text.append("Notifications: ")
+                    .append(checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED ? "allowed" : "not allowed")
+                    .append('\n');
+        } else {
+            text.append("Notifications: no runtime permission required\n");
+        }
+        text.append("SMS: not requested; this tmux client does not need SMS permission.\n");
+
+        new AlertDialog.Builder(this)
+                .setTitle("Permissions / update")
+                .setMessage(text.toString())
+                .setNegativeButton("Close", null)
+                .setNeutralButton("Install permission", (dialog, which) -> openInstallPermissionSettings())
+                .setPositiveButton("Notify permission", (dialog, which) -> requestNotificationPermission())
+                .show();
+    }
+
+    private void openInstallPermissionSettings() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            showMessage("Install permission is allowed on this Android version");
+            return;
+        }
+        Intent intent = new Intent(
+                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                Uri.parse("package:" + getPackageName())
+        );
+        startActivity(intent);
+    }
+
+    private void requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT < 33) {
+            showMessage("Notification permission is not required on this Android version");
+            return;
+        }
+        requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 3001);
     }
 
     private void showImagePreview(String path, String basePath) {
