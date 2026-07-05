@@ -3,126 +3,35 @@ name: Gitea Android APK
 on: [push]
 
 jobs:
-  probe:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Probe runner
-        run: |
-          pwd
-          command -v sh
-          command -v git || true
-          command -v curl || true
-          command -v unzip || true
-          command -v java || true
-
-  checkout:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Test repository checkout
+      - name: Build APK
         env:
           CLONE_TOKEN: ${{ secrets.TMUX_GITEA_TOKEN }}
         run: |
           set -eu
-          if ! command -v git >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1 || ! command -v java >/dev/null 2>&1; then
-            if command -v sudo >/dev/null 2>&1; then
-              sudo apt-get update
-              sudo apt-get install -y git curl unzip openjdk-17-jdk
-            else
-              apt-get update
-              apt-get install -y git curl unzip openjdk-17-jdk
-            fi
+
+          if command -v sudo >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y git curl unzip openjdk-17-jdk
+          else
+            apt-get update
+            apt-get install -y git curl unzip openjdk-17-jdk
           fi
 
           WORKDIR="${PWD}/source"
           rm -rf "${WORKDIR}"
-          mkdir -p "${WORKDIR}"
           SERVER_URL="${GITHUB_SERVER_URL:-https://gitea.neatcn.com}"
           REPOSITORY="${GITHUB_REPOSITORY:-tmux/tmux-browser-android}"
-          TOKEN="${CLONE_TOKEN:-${GITHUB_TOKEN:-${GITEA_TOKEN:-}}}"
-          if [ -n "${TOKEN}" ]; then
-            AUTH_SERVER_URL="$(printf '%s' "${SERVER_URL}" | sed "s#https://#https://gouki:${TOKEN}@#")"
-            REPO_URL="${AUTH_SERVER_URL}/${REPOSITORY}.git"
-          else
-            REPO_URL="${SERVER_URL}/${REPOSITORY}.git"
-          fi
-          git clone "${REPO_URL}" "${WORKDIR}"
+          AUTH_SERVER_URL="$(printf '%s' "${SERVER_URL}" | sed "s#https://#https://gouki:${CLONE_TOKEN}@#")"
+          git clone "${AUTH_SERVER_URL}/${REPOSITORY}.git" "${WORKDIR}"
           cd "${WORKDIR}"
           git checkout "${GITHUB_SHA:-main}"
-          test -f app/build.gradle.kts
-
-  tools:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Require basic tools
-        run: |
-          command -v git
-          command -v curl
-          command -v unzip
-
-  lsremote:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Test authenticated git access
-        env:
-          CLONE_TOKEN: ${{ secrets.TMUX_GITEA_TOKEN }}
-        run: |
-          set -eu
-          SERVER_URL="${GITHUB_SERVER_URL:-https://gitea.neatcn.com}"
-          REPOSITORY="${GITHUB_REPOSITORY:-tmux/tmux-browser-android}"
-          REPO_URL="$(printf '%s' "${SERVER_URL}" | sed "s#https://#https://gouki:${CLONE_TOKEN}@#")/${REPOSITORY}.git"
-          git ls-remote "${REPO_URL}" HEAD
-
-  secret:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check clone token secret
-        env:
-          CLONE_TOKEN: ${{ secrets.TMUX_GITEA_TOKEN }}
-        run: |
-          test -n "${CLONE_TOKEN:-}"
-
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Build APK without external actions
-        env:
-          CLONE_TOKEN: ${{ secrets.TMUX_GITEA_TOKEN }}
-        run: |
-          set -eu
-
-          if ! command -v git >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1 || ! command -v java >/dev/null 2>&1; then
-            if command -v sudo >/dev/null 2>&1; then
-              sudo apt-get update
-              sudo apt-get install -y git curl unzip openjdk-17-jdk
-            else
-              apt-get update
-              apt-get install -y git curl unzip openjdk-17-jdk
-            fi
-          fi
-
-          if [ ! -d .git ]; then
-            WORKDIR="${PWD}/source"
-            rm -rf "${WORKDIR}"
-            mkdir -p "${WORKDIR}"
-            SERVER_URL="${GITHUB_SERVER_URL:-https://gitea.neatcn.com}"
-            REPOSITORY="${GITHUB_REPOSITORY:-tmux/tmux-browser-android}"
-            TOKEN="${CLONE_TOKEN:-${GITHUB_TOKEN:-${GITEA_TOKEN:-}}}"
-            if [ -n "${TOKEN}" ]; then
-              AUTH_SERVER_URL="$(printf '%s' "${SERVER_URL}" | sed "s#https://#https://gouki:${TOKEN}@#")"
-              REPO_URL="${AUTH_SERVER_URL}/${REPOSITORY}.git"
-            else
-              REPO_URL="${SERVER_URL}/${REPOSITORY}.git"
-            fi
-            git clone "${REPO_URL}" "${WORKDIR}"
-            cd "${WORKDIR}"
-            git checkout "${GITHUB_SHA:-main}"
-          fi
-
-          java -version
 
           export GRADLE_HOME="${PWD}/.ci/gradle-8.10.2"
+          mkdir -p .ci
           if [ ! -x "${GRADLE_HOME}/bin/gradle" ]; then
-            mkdir -p .ci
             curl -fsSL -o .ci/gradle.zip https://services.gradle.org/distributions/gradle-8.10.2-bin.zip
             unzip -q .ci/gradle.zip -d .ci
           fi
@@ -132,7 +41,7 @@ jobs:
           export ANDROID_SDK_ROOT="${ANDROID_HOME}"
           export CMDLINE_TOOLS="${ANDROID_HOME}/cmdline-tools/latest"
           if [ ! -x "${CMDLINE_TOOLS}/bin/sdkmanager" ]; then
-            mkdir -p "${ANDROID_HOME}/cmdline-tools" .ci
+            mkdir -p "${ANDROID_HOME}/cmdline-tools"
             curl -fsSL -o .ci/android-tools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
             unzip -q .ci/android-tools.zip -d "${ANDROID_HOME}/cmdline-tools"
             mv "${ANDROID_HOME}/cmdline-tools/cmdline-tools" "${CMDLINE_TOOLS}"
