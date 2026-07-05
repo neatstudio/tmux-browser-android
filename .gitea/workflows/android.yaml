@@ -23,13 +23,13 @@ jobs:
           CLONE_TOKEN: ${{ secrets.TMUX_GITEA_TOKEN }}
         run: |
           set -eu
-          if ! command -v git >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1; then
+          if ! command -v git >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1 || ! command -v java >/dev/null 2>&1; then
             if command -v sudo >/dev/null 2>&1; then
               sudo apt-get update
-              sudo apt-get install -y git curl unzip
+              sudo apt-get install -y git curl unzip openjdk-17-jdk
             else
               apt-get update
-              apt-get install -y git curl unzip
+              apt-get install -y git curl unzip openjdk-17-jdk
             fi
           fi
 
@@ -90,13 +90,13 @@ jobs:
         run: |
           set -eu
 
-          if ! command -v git >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1; then
+          if ! command -v git >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1 || ! command -v java >/dev/null 2>&1; then
             if command -v sudo >/dev/null 2>&1; then
               sudo apt-get update
-              sudo apt-get install -y git curl unzip
+              sudo apt-get install -y git curl unzip openjdk-17-jdk
             else
               apt-get update
-              apt-get install -y git curl unzip
+              apt-get install -y git curl unzip openjdk-17-jdk
             fi
           fi
 
@@ -118,15 +118,7 @@ jobs:
             git checkout "${GITHUB_SHA:-main}"
           fi
 
-          if ! command -v java >/dev/null 2>&1; then
-            if command -v sudo >/dev/null 2>&1; then
-              sudo apt-get update
-              sudo apt-get install -y openjdk-17-jdk
-            else
-              apt-get update
-              apt-get install -y openjdk-17-jdk
-            fi
-          fi
+          java -version
 
           export GRADLE_HOME="${PWD}/.ci/gradle-8.10.2"
           if [ ! -x "${GRADLE_HOME}/bin/gradle" ]; then
