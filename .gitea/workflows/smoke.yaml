@@ -1,0 +1,11 @@
+name: Gitea Smoke
+
+on: [push]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "gitea actions smoke test"
+      - run: pwd
+      - run: ls -la
