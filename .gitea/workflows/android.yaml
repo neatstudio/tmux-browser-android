@@ -11,6 +11,9 @@ jobs:
           set -eu
 
           if [ ! -d .git ]; then
+            WORKDIR="${PWD}/source"
+            rm -rf "${WORKDIR}"
+            mkdir -p "${WORKDIR}"
             SERVER_URL="${GITHUB_SERVER_URL:-https://gitea.neatcn.com}"
             REPOSITORY="${GITHUB_REPOSITORY:-tmux/tmux-browser-android}"
             TOKEN="${GITHUB_TOKEN:-${GITEA_TOKEN:-}}"
@@ -20,7 +23,8 @@ jobs:
             else
               REPO_URL="${SERVER_URL}/${REPOSITORY}.git"
             fi
-            git clone "${REPO_URL}" .
+            git clone "${REPO_URL}" "${WORKDIR}"
+            cd "${WORKDIR}"
             git checkout "${GITHUB_SHA:-main}"
           fi
 
