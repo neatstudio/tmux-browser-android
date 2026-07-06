@@ -343,11 +343,13 @@ public final class MainActivity extends Activity {
         content.addView(infoBlock(
                 "Protocol",
                 "API base: " + getServerUrl() + "\n"
-                        + "HTTP API on port 3000; terminal input/output uses the app's native socket client."
+                        + "HTTP on port 3000: /api/health, /api/sessions, session actions, kanban, messages, images.\n"
+                        + "WebSocket: /ws/terminal uses attach/input/resize/scroll/clear-history; /ws/events streams session and hook events."
         ));
         content.addView(infoBlock(
                 "Update policy",
-                "The app checks only the selected update source. APK downloads are cached by version and reused after Android install permission is granted."
+                "Selected source:\n" + prefs.getString("update_url", BuildConfig.DEFAULT_UPDATE_URL) + "\n"
+                        + "The app checks only this source. APK downloads are cached by version and reused after Android install permission is granted."
         ));
         content.addView(actionPanel(
                 actionButton("Release page", view -> updateManager.openReleasePage()),
@@ -1186,7 +1188,7 @@ public final class MainActivity extends Activity {
         text.append("Tap Release on the About page. The app resolves the page from the selected update source.\n");
         text.append('\n');
         text.append("In-app update:\n");
-        text.append("Tap Update. The app checks only the selected source, downloads one APK per version, verifies SHA-256, then opens Android's installer.\n");
+        text.append("Tap Check now on the Update page. The app checks only the selected source, downloads one APK per version, verifies SHA-256, then opens Android's installer.\n");
         text.append("Selected manifest:\n")
                 .append(prefs.getString("update_url", BuildConfig.DEFAULT_UPDATE_URL))
                 .append('\n');

@@ -180,7 +180,7 @@ In the app:
 - Open the `Update` page and tap `APK` to resolve the APK from the selected
   update source and open it in a browser.
 - Open the `Update` page and tap `Details` to see the installed version,
-  selected update source, APK URL, install permission state, and a `Check
-  update` button.
+  selected update source, APK/Release resolver behavior, install permission
+  state, and a `Check update` button.
 - Open the `About` page to see the app version, package name, API/protocol
-  summary, and update policy.
+  summary, selected update source, and update policy.
