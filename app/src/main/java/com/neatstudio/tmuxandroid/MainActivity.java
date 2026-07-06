@@ -60,6 +60,10 @@ public final class MainActivity extends Activity {
     private static final int MAX_TERMINAL_CHARS = 120_000;
     private static final String OLD_LOCAL_DEFAULT_URL = "http://127.0.0.1:3000";
     private static final String DEFAULT_TAILSCALE_URL = "http://100.89.0.116:3000";
+    private static final String PAGE_SESSIONS = "Sessions";
+    private static final String PAGE_TOOLS = "Tools";
+    private static final String PAGE_UPDATE = "Update";
+    private static final String PAGE_ABOUT = "About";
     private static final String[] SERVER_PROFILES = {
             "http://100.89.0.116:3000",
             "http://100.89.0.2:3000",
@@ -82,6 +86,7 @@ public final class MainActivity extends Activity {
     private ScrollView terminalScroll;
     private EditText inputField;
     private String activeSessionName;
+    private String activeMainPage = PAGE_SESSIONS;
     private String pendingImageUploadSession;
     private final StringBuilder terminalBuffer = new StringBuilder();
 
@@ -169,11 +174,16 @@ public final class MainActivity extends Activity {
     private void renderSessionScreen() {
         closeTerminalSocket();
         activeSessionName = null;
+        activeMainPage = PAGE_SESSIONS;
         root.removeAllViews();
         root.addView(createServerBar(), matchWrap());
         root.addView(createServerProfileBar(), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(46)
+        ));
+        root.addView(createMainTabs(PAGE_SESSIONS), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(48)
         ));
         root.addView(progressBar, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -195,6 +205,163 @@ public final class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(28)
         ));
+    }
+
+    private void renderToolsScreen() {
+        closeTerminalSocket();
+        activeSessionName = null;
+        activeMainPage = PAGE_TOOLS;
+        root.removeAllViews();
+        root.addView(createServerBar(), matchWrap());
+        root.addView(createMainTabs(PAGE_TOOLS), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(48)
+        ));
+        root.addView(progressBar, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(3)
+        ));
+
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout content = pageContent();
+        content.addView(sectionTitle("Server"));
+        content.addView(actionPanel(
+                actionButton("Health", view -> showRaw("Health", () -> api.health())),
+                actionButton("Probe Tailscale", view -> probeServerProfiles()),
+                actionButton("Status", view -> showRaw("Server status", () -> api.serverStatus()))
+        ));
+        content.addView(sectionTitle("Sessions"));
+        content.addView(actionPanel(
+                actionButton("Timeline", view -> showRaw("Timeline", () -> api.timeline(50))),
+                actionButton("All details", view -> showRaw("All session details", () -> api.sessionsAll())),
+                actionButton("Pane details", view -> showRaw("Pane details", () -> api.sessionsPanes()))
+        ));
+        content.addView(sectionTitle("Kanban / Messages"));
+        content.addView(actionPanel(
+                actionButton("Projects", view -> showRaw("Kanban projects", () -> api.kanbanProjects())),
+                actionButton("New project", view -> promptCreateKanbanProject()),
+                actionButton("Messages", view -> promptGroupMessages())
+        ));
+        content.addView(actionPanel(
+                actionButton("Send message", view -> promptSendGroupMessage()),
+                actionButton("Scan message", view -> promptScanGroupMessage()),
+                actionButton("Post hook", view -> promptPostHookEvent())
+        ));
+        content.addView(sectionTitle("Images"));
+        content.addView(actionPanel(
+                actionButton("Upload file", view -> promptUploadImageFile()),
+                actionButton("Upload URL", view -> promptUploadImageUrl()),
+                actionButton("Preview", view -> promptOpenImagePreview())
+        ));
+        scroll.addView(content);
+        root.addView(scroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1
+        ));
+        root.addView(statusText, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(28)
+        ));
+        setStatus("Tools");
+    }
+
+    private void renderUpdateScreen() {
+        closeTerminalSocket();
+        activeSessionName = null;
+        activeMainPage = PAGE_UPDATE;
+        root.removeAllViews();
+        root.addView(createServerBar(), matchWrap());
+        root.addView(createMainTabs(PAGE_UPDATE), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(48)
+        ));
+        root.addView(progressBar, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(3)
+        ));
+
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout content = pageContent();
+        content.addView(infoBlock(
+                "Installed",
+                "Version " + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")\n"
+                        + "Update source:\n" + prefs.getString("update_url", BuildConfig.DEFAULT_UPDATE_URL)
+        ));
+        content.addView(sectionTitle("Update"));
+        content.addView(actionPanel(
+                actionButton("Check now", view -> updateManager.check(true)),
+                actionButton("Source", view -> showUpdateSourcePicker()),
+                actionButton("APK", view -> openExternalUrl(BuildConfig.DEFAULT_APK_URL))
+        ));
+        content.addView(sectionTitle("Permissions"));
+        content.addView(infoBlock("Android", permissionSummary()));
+        content.addView(actionPanel(
+                actionButton("Install permission", view -> openInstallPermissionSettings()),
+                actionButton("Notifications", view -> requestNotificationPermission()),
+                actionButton("Details", view -> showPermissionsAndUpdateStatus())
+        ));
+        scroll.addView(content);
+        root.addView(scroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1
+        ));
+        root.addView(statusText, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(28)
+        ));
+        setStatus("Update and permissions");
+    }
+
+    private void renderAboutScreen() {
+        closeTerminalSocket();
+        activeSessionName = null;
+        activeMainPage = PAGE_ABOUT;
+        root.removeAllViews();
+        root.addView(createServerBar(), matchWrap());
+        root.addView(createMainTabs(PAGE_ABOUT), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(48)
+        ));
+        root.addView(progressBar, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(3)
+        ));
+
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout content = pageContent();
+        content.addView(infoBlock(
+                "tmux-browser Android",
+                "Native Android client for the remote tmux-browser API.\n"
+                        + "Version " + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")\n"
+                        + "Package " + getPackageName()
+        ));
+        content.addView(infoBlock(
+                "Protocol",
+                "API base: " + getServerUrl() + "\n"
+                        + "HTTP API on port 3000; terminal input/output uses the app's native socket client."
+        ));
+        content.addView(infoBlock(
+                "Update policy",
+                "The app checks only the selected update source. APK downloads are cached by version and reused after Android install permission is granted."
+        ));
+        content.addView(actionPanel(
+                actionButton("Release page", view -> openExternalUrl(BuildConfig.DEFAULT_RELEASE_PAGE_URL)),
+                actionButton("Update source", view -> showUpdateSourcePicker()),
+                actionButton("Permissions", view -> showPermissionsAndUpdateStatus())
+        ));
+        scroll.addView(content);
+        root.addView(scroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1
+        ));
+        root.addView(statusText, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(28)
+        ));
+        setStatus("About");
     }
 
     private LinearLayout createServerBar() {
@@ -273,13 +440,130 @@ public final class MainActivity extends Activity {
         return scroller;
     }
 
+    private HorizontalScrollView createMainTabs(String selected) {
+        HorizontalScrollView scroller = new HorizontalScrollView(this);
+        scroller.setHorizontalScrollBarEnabled(false);
+        scroller.setBackgroundColor(Color.rgb(17, 20, 24));
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(8), dp(4), dp(8), dp(4));
+        row.addView(navButton(PAGE_SESSIONS, selected, view -> {
+            renderSessionScreen();
+            refreshSessions();
+        }));
+        row.addView(navButton(PAGE_TOOLS, selected, view -> renderToolsScreen()));
+        row.addView(navButton(PAGE_UPDATE, selected, view -> renderUpdateScreen()));
+        row.addView(navButton(PAGE_ABOUT, selected, view -> renderAboutScreen()));
+
+        scroller.addView(row, new HorizontalScrollView.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+        ));
+        return scroller;
+    }
+
+    private Button navButton(String label, String selected, View.OnClickListener listener) {
+        Button button = toolbarButton(label, listener);
+        boolean active = label.equals(selected);
+        button.setTextColor(active ? Color.rgb(8, 12, 18) : Color.rgb(235, 241, 248));
+        button.setBackground(active
+                ? rounded(Color.rgb(86, 211, 219), 8, Color.rgb(86, 211, 219), 1)
+                : buttonBackground());
+        button.setMinWidth(dp(82));
+        button.setMinimumWidth(dp(82));
+        return button;
+    }
+
+    private LinearLayout pageContent() {
+        LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.setPadding(dp(10), dp(10), dp(10), dp(14));
+        return content;
+    }
+
+    private TextView sectionTitle(String text) {
+        TextView title = new TextView(this);
+        title.setText(text);
+        title.setTextColor(Color.rgb(139, 148, 158));
+        title.setTextSize(12);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setPadding(dp(2), dp(12), dp(2), dp(6));
+        return title;
+    }
+
+    private View infoBlock(String title, String body) {
+        LinearLayout block = new LinearLayout(this);
+        block.setOrientation(LinearLayout.VERTICAL);
+        block.setPadding(dp(12), dp(10), dp(12), dp(10));
+        block.setBackground(rounded(Color.rgb(27, 33, 40), 8, Color.rgb(45, 54, 64), 1));
+
+        TextView heading = new TextView(this);
+        heading.setText(title);
+        heading.setTextColor(Color.WHITE);
+        heading.setTextSize(16);
+        heading.setTypeface(Typeface.DEFAULT_BOLD);
+
+        TextView text = bodyText(body);
+        text.setPadding(0, dp(6), 0, 0);
+        block.addView(heading);
+        block.addView(text);
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        params.bottomMargin = dp(8);
+        block.setLayoutParams(params);
+        return block;
+    }
+
+    private LinearLayout actionPanel(Button... buttons) {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(7), dp(7), dp(7), dp(2));
+        panel.setBackground(rounded(Color.rgb(24, 30, 37), 8, Color.rgb(42, 51, 61), 1));
+        LinearLayout row = null;
+        for (int index = 0; index < buttons.length; index++) {
+            if (index % 2 == 0) {
+                row = new LinearLayout(this);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                panel.addView(row, matchWrap());
+            }
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(42), 1);
+            params.leftMargin = dp(3);
+            params.rightMargin = dp(3);
+            params.bottomMargin = dp(6);
+            row.addView(buttons[index], params);
+        }
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        params.bottomMargin = dp(8);
+        panel.setLayoutParams(params);
+        return panel;
+    }
+
+    private Button actionButton(String label, View.OnClickListener listener) {
+        Button button = toolbarButton(label, listener);
+        button.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+        ));
+        return button;
+    }
+
     private void selectServer(String url) {
         prefs.edit().putString("server_url", url).apply();
         api = new SessionApiClient(url);
         urlField.setText(url);
         setStatus("Selected " + url);
         connectAppEvents();
-        refreshSessions();
+        if (PAGE_SESSIONS.equals(activeMainPage)) {
+            refreshSessions();
+        }
     }
 
     private void refreshSessions() {
@@ -489,7 +773,8 @@ public final class MainActivity extends Activity {
                 "Open image preview",
                 "Open APK download",
                 "Update source",
-                "Permissions / update status"
+                "Permissions / update status",
+                "About"
         };
         new AlertDialog.Builder(this)
                 .setTitle("Native API actions")
@@ -560,6 +845,9 @@ public final class MainActivity extends Activity {
                             break;
                         case 21:
                             showPermissionsAndUpdateStatus();
+                            break;
+                        case 22:
+                            renderAboutScreen();
                             break;
                         default:
                             break;
@@ -981,29 +1269,15 @@ public final class MainActivity extends Activity {
                 .append('\n');
         text.append('\n');
         text.append("In-app update:\n");
-        text.append("Tap Update. The app reads latest.json, downloads the APK, verifies SHA-256, then opens Android's installer.\n");
+        text.append("Tap Update. The app checks only the selected source, downloads one APK per version, verifies SHA-256, then opens Android's installer.\n");
         text.append("Selected manifest:\n")
                 .append(prefs.getString("update_url", BuildConfig.DEFAULT_UPDATE_URL))
                 .append('\n');
-        text.append("GitHub primary manifest:\n").append(BuildConfig.DEFAULT_UPDATE_URL).append('\n');
-        text.append("Gitea public mirror API:\n").append(BuildConfig.DEFAULT_GITEA_UPDATE_URL).append('\n');
+        text.append("Available sources:\n");
+        text.append("GitHub: ").append(BuildConfig.DEFAULT_UPDATE_URL).append('\n');
+        text.append("Gitea: ").append(BuildConfig.DEFAULT_GITEA_UPDATE_URL).append('\n');
         text.append('\n');
-        text.append("Network: manifest permission, no runtime grant required\n");
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            text.append("Install unknown apps: ")
-                    .append(getPackageManager().canRequestPackageInstalls() ? "allowed" : "not allowed")
-                    .append('\n');
-        } else {
-            text.append("Install unknown apps: allowed by Android version\n");
-        }
-        if (Build.VERSION.SDK_INT >= 33) {
-            text.append("Notifications: ")
-                    .append(checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED ? "allowed" : "not allowed")
-                    .append('\n');
-        } else {
-            text.append("Notifications: no runtime permission required\n");
-        }
-        text.append("SMS: not requested; this tmux client does not need SMS permission.\n");
+        text.append(permissionSummary());
 
         new AlertDialog.Builder(this)
                 .setTitle("Permissions / update")
@@ -1012,6 +1286,27 @@ public final class MainActivity extends Activity {
                 .setNeutralButton("Install permission", (dialog, which) -> openInstallPermissionSettings())
                 .setPositiveButton("Check update", (dialog, which) -> updateManager.check(true))
                 .show();
+    }
+
+    private String permissionSummary() {
+        StringBuilder text = new StringBuilder();
+        text.append("Network: declared in manifest; Android does not show a runtime grant.\n");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            text.append("Install unknown apps: ")
+                    .append(getPackageManager().canRequestPackageInstalls() ? "allowed" : "not allowed")
+                    .append(". Android requires you to allow this per app before in-app APK updates can install.\n");
+        } else {
+            text.append("Install unknown apps: allowed by this Android version.\n");
+        }
+        if (Build.VERSION.SDK_INT >= 33) {
+            text.append("Notifications: ")
+                    .append(checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED ? "allowed" : "not allowed")
+                    .append(". This only affects optional status notifications, not tmux control.\n");
+        } else {
+            text.append("Notifications: no runtime permission required.\n");
+        }
+        text.append("SMS: not requested. This tmux client does not need SMS permission.");
+        return text.toString();
     }
 
     private void openExternalUrl(String url) {
@@ -1045,6 +1340,11 @@ public final class MainActivity extends Activity {
     private void setUpdateUrl(String url) {
         prefs.edit().putString("update_url", url).apply();
         showMessage("Update source: " + url);
+        if (PAGE_UPDATE.equals(activeMainPage)) {
+            renderUpdateScreen();
+        } else if (PAGE_ABOUT.equals(activeMainPage)) {
+            renderAboutScreen();
+        }
     }
 
     private void probeServerProfiles() {
@@ -1474,7 +1774,11 @@ public final class MainActivity extends Activity {
         api = new SessionApiClient(url);
         urlField.setText(url);
         connectAppEvents();
-        refreshSessions();
+        if (PAGE_SESSIONS.equals(activeMainPage)) {
+            refreshSessions();
+        } else {
+            setStatus("Server saved: " + url);
+        }
     }
 
     private String getServerUrl() {

@@ -20,9 +20,6 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.security.MessageDigest;
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -37,6 +34,8 @@ final class UpdateManager {
     private final SharedPreferences prefs;
     private final Callback callback;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private boolean checkInProgress;
+    private boolean downloadInProgress;
 
     UpdateManager(Activity activity, SharedPreferences prefs, Callback callback) {
         this.activity = activity;
@@ -45,12 +44,17 @@ final class UpdateManager {
     }
 
     void check(boolean userInitiated) {
-        List<String> manifestUrls = getUpdateManifestUrls();
+        if (checkInProgress) {
+            postMessage("Update check already running");
+            return;
+        }
+        String manifestUrl = getUpdateManifestUrl();
+        checkInProgress = true;
         callback.onChecking(true);
-        postMessage("Checking update...");
+        postMessage("Checking update from " + hostLabel(manifestUrl) + "...");
         executor.execute(() -> {
             try {
-                ReleaseInfo info = fetchFirstReleaseInfo(manifestUrls);
+                ReleaseInfo info = fetchReleaseInfo(manifestUrl);
                 if (info.versionCode <= BuildConfig.VERSION_CODE) {
                     postMessage("Already up to date: " + BuildConfig.VERSION_NAME);
                     return;
@@ -60,37 +64,18 @@ final class UpdateManager {
             } catch (Exception error) {
                 postMessage(userInitiated ? "Update check failed: " + error.getMessage() : null);
             } finally {
+                checkInProgress = false;
                 activity.runOnUiThread(() -> callback.onChecking(false));
             }
         });
     }
 
-    private List<String> getUpdateManifestUrls() {
-        LinkedHashSet<String> urls = new LinkedHashSet<>();
-        addUrl(urls, prefs.getString("update_url", BuildConfig.DEFAULT_UPDATE_URL));
-        addUrl(urls, BuildConfig.DEFAULT_UPDATE_URL);
-        addUrl(urls, BuildConfig.DEFAULT_GITEA_UPDATE_URL);
-        return new ArrayList<>(urls);
-    }
-
-    private void addUrl(LinkedHashSet<String> urls, String url) {
-        if (url != null && !url.trim().isEmpty()) {
-            urls.add(url.trim());
+    private String getUpdateManifestUrl() {
+        String url = prefs.getString("update_url", BuildConfig.DEFAULT_UPDATE_URL);
+        if (url == null || url.trim().isEmpty()) {
+            return BuildConfig.DEFAULT_UPDATE_URL;
         }
-    }
-
-    private ReleaseInfo fetchFirstReleaseInfo(List<String> manifestUrls) throws Exception {
-        Exception lastError = null;
-        for (String manifestUrl : manifestUrls) {
-            try {
-                postMessage("Checking " + hostLabel(manifestUrl) + "...");
-                return fetchReleaseInfo(manifestUrl);
-            } catch (Exception error) {
-                lastError = error;
-                postMessage(hostLabel(manifestUrl) + " failed");
-            }
-        }
-        throw lastError == null ? new IllegalStateException("No update source configured") : lastError;
+        return url.trim();
     }
 
     private String hostLabel(String url) {
@@ -173,8 +158,13 @@ final class UpdateManager {
     }
 
     private void downloadAndInstall(ReleaseInfo info) {
+        if (downloadInProgress) {
+            postMessage("Update download already running");
+            return;
+        }
+        downloadInProgress = true;
         callback.onChecking(true);
-        postMessage("Downloading " + info.versionName + "...");
+        postMessage("Preparing " + info.versionName + "...");
         executor.execute(() -> {
             try {
                 File apk = downloadApk(info);
@@ -189,6 +179,7 @@ final class UpdateManager {
             } catch (Exception error) {
                 postMessage("Update download failed: " + error.getMessage());
             } finally {
+                downloadInProgress = false;
                 activity.runOnUiThread(() -> callback.onChecking(false));
             }
         });
@@ -200,7 +191,12 @@ final class UpdateManager {
             throw new IllegalStateException("Cannot create update cache");
         }
         File apk = new File(dir, "tmux-android-" + info.versionCode + ".apk");
+        if (isCachedApkValid(apk, info)) {
+            postMessage("Using downloaded APK");
+            return apk;
+        }
 
+        postMessage("Downloading " + info.versionName + "...");
         HttpURLConnection connection = (HttpURLConnection) new URL(info.apkUrl).openConnection();
         connection.setConnectTimeout(12000);
         connection.setReadTimeout(60000);
@@ -215,6 +211,16 @@ final class UpdateManager {
             connection.disconnect();
         }
         return apk;
+    }
+
+    private boolean isCachedApkValid(File apk, ReleaseInfo info) throws Exception {
+        if (!apk.exists() || apk.length() <= 0) {
+            return false;
+        }
+        if (info.sha256.isEmpty()) {
+            return true;
+        }
+        return sha256(apk).equalsIgnoreCase(info.sha256);
     }
 
     private void installApk(File apk) {
