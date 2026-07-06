@@ -71,6 +71,10 @@ final class TerminalSocketClient {
         }
     }
 
+    boolean isClosed() {
+        return closed;
+    }
+
     private void run(String baseUrl, String sessionName, int cols, int rows) {
         try {
             URI uri = buildWsUri(baseUrl);
@@ -78,7 +82,6 @@ final class TerminalSocketClient {
             input = new BufferedInputStream(socket.getInputStream());
             output = new BufferedOutputStream(socket.getOutputStream());
             handshake(uri);
-            listener.onConnected();
             sendMessage(
                     "attach",
                     "tabId", "android-" + System.currentTimeMillis(),
@@ -86,6 +89,7 @@ final class TerminalSocketClient {
                     "cols", cols,
                     "rows", rows
             );
+            listener.onConnected();
             readLoop();
         } catch (Exception error) {
             if (!closed) {

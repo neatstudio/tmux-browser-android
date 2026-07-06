@@ -70,7 +70,8 @@ Implemented now:
 
 - configurable base URL, defaulting to `http://100.89.0.116:3000`
 - support for Tailscale URLs such as `http://100.x.y.z:3000`
-- native multi-page shell with `Sessions`, `Tools`, `Update`, and `About`
+- native multi-page shell with `Sessions`, `Projects`, `Tools`, `Update`, and
+  `About`
 - native session list from `GET /api/sessions`
 - create, rename, command send, split, pane select, pane kill, pin, mute, and
   kill session through documented session/preference endpoints
@@ -79,9 +80,11 @@ Implemented now:
 - bottom shortcut bar for `Esc`, `Tab`, `Ctrl+C`, `Ctrl+V`, arrows, page keys,
   tmux prefix actions, and paste
 - shortcut delivery through the terminal WebSocket `input` message
-- native Tools page for health, server status, timeline, preferences, kanban
-  projects, group messages, hook events, image file/URL upload, image preview
-  metadata, and native image preview display
+- native Projects page for kanban project grouping, project agents, project
+  messages, add/remove session, create, and delete actions
+- native Tools page for health, server status, timeline, preferences, hook
+  events, image file/URL upload, image preview metadata, and native image
+  preview display
 - GitHub Actions APK build
 - release manifest `latest.json`
 - selected-source update checks; GitHub and Gitea are not probed in the same
@@ -121,6 +124,6 @@ is a useful feature or test batch for phone-side validation.
 To converge with the upstream mobile design, the next implementation should add
 native Android modules in this order:
 
-1. richer native layouts for kanban, group messages, timeline, and preferences
+1. richer native layouts for group messages, timeline, and preferences
 2. `TerminalCore` with ANSI parsing, cursor state, colors, and dirty rows
 3. configurable shortcut bar backed directly by WebSocket `input`

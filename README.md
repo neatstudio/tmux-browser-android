@@ -13,14 +13,16 @@ APIs directly:
   session counts
 - native tmux session list
 - Sessions page with current API/server and loaded session count
+- native Projects page for kanban project grouping, project agents, project
+  messages, add/remove session, create, and delete actions
 - create, rename, send command, split pane, select pane, kill pane, pin, mute,
   and kill session through HTTP API
 - open one live terminal viewer through `/ws/terminal`
 - native `/ws/events` listener for session invalidation and hook notifications
 - selectable GitHub or Gitea update manifest source
-- native Tools page for health, server status, timeline, preferences,
-  kanban projects, group messages, hook events, image file/URL upload, image
-  preview info, and native image preview display
+- native Tools page for health, server status, timeline, preferences, hook
+  events, image file/URL upload, image preview info, and native image preview
+  display
 - mobile soft-key row for tmux-oriented input, including tmux prefix, detach,
   new window, previous/next window, Ctrl keys, arrows, page keys, and paste
 - automatic update checks against the selected release manifest
@@ -111,17 +113,21 @@ messages unchanged: `attach`, `input`, `resize`, `scroll`, and `clear-history`.
 The first Android UI renders terminal output as monospace text with basic ANSI
 SGR color support. The terminal view stays bottom-aligned when output is short,
 auto-scrolls as data arrives, and adjusts its bottom inset when the soft keyboard
-opens. It is enough for shell-oriented remote testing, but it is not yet a
-complete xterm-compatible renderer for full-screen TUIs such as `vim` or `top`.
+opens. Rendering is throttled and the local terminal buffer is capped so opening
+busy sessions does not block the UI thread. Input typed before the terminal
+attach message is sent is queued and flushed after the WebSocket client is ready.
+It is enough for shell-oriented remote testing, but it is not yet a complete
+xterm-compatible renderer for full-screen TUIs such as `vim` or `top`.
 
 The terminal toolbar and shortcut row include tmux prefix helpers. The app sends
 the same control bytes a keyboard would send, for example `Ctrl+B`, `Ctrl+B d`,
 `Ctrl+B c`, `Ctrl+B n`, and `Ctrl+B p`.
 
 All app features are native Android controls. Complex server objects such as
-kanban projects, preferences, timeline events, group messages, and image metadata
-currently use native forms plus native JSON detail dialogs; image preview uses a
-native `ImageView`. The app does not load the browser UI.
+preferences, timeline events, group messages, and image metadata currently use
+native forms plus native JSON detail dialogs; kanban projects use a native
+project/agent list; image preview uses a native `ImageView`. The app does not
+load the browser UI.
 
 ## Permissions
 

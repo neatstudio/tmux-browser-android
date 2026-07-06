@@ -41,6 +41,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
@@ -56,10 +57,12 @@ public final class MainActivity extends Activity {
     private static final long AUTO_UPDATE_INTERVAL_MS = 6L * 60L * 60L * 1000L;
     private static final int TERMINAL_COLS = 96;
     private static final int TERMINAL_ROWS = 32;
-    private static final int MAX_TERMINAL_CHARS = 120_000;
+    private static final int MAX_TERMINAL_CHARS = 40_000;
+    private static final long TERMINAL_RENDER_INTERVAL_MS = 80L;
     private static final String OLD_LOCAL_DEFAULT_URL = "http://127.0.0.1:3000";
     private static final String DEFAULT_TAILSCALE_URL = "http://100.89.0.116:3000";
     private static final String PAGE_SESSIONS = "Sessions";
+    private static final String PAGE_PROJECTS = "Projects";
     private static final String PAGE_TOOLS = "Tools";
     private static final String PAGE_UPDATE = "Update";
     private static final String PAGE_ABOUT = "About";
@@ -82,6 +85,7 @@ public final class MainActivity extends Activity {
     private ProgressBar progressBar;
     private TextView statusText;
     private TextView sessionSummaryText;
+    private LinearLayout projectList;
     private TextView terminalText;
     private ScrollView terminalScroll;
     private EditText inputField;
@@ -89,6 +93,10 @@ public final class MainActivity extends Activity {
     private String activeMainPage = PAGE_SESSIONS;
     private String pendingImageUploadSession;
     private final StringBuilder terminalBuffer = new StringBuilder();
+    private final StringBuilder queuedTerminalInput = new StringBuilder();
+    private boolean terminalConnected;
+    private boolean terminalRenderPending;
+    private long lastTerminalRenderMs;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -282,6 +290,59 @@ public final class MainActivity extends Activity {
         setStatus("Tools");
     }
 
+    private void renderProjectsScreen() {
+        closeTerminalSocket();
+        activeSessionName = null;
+        activeMainPage = PAGE_PROJECTS;
+        root.removeAllViews();
+        root.addView(createServerBar(), matchWrap());
+        root.addView(createMainTabs(PAGE_PROJECTS), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(48)
+        ));
+        root.addView(progressBar, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(3)
+        ));
+
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout content = pageContent();
+        content.addView(infoBlock(
+                "Project groups",
+                "Kanban projects group tmux sessions and group messages through the server API."
+        ));
+        content.addView(sectionTitle("Projects"));
+        content.addView(actionPanel(
+                actionButton("Refresh", view -> refreshProjects()),
+                actionButton("New project", view -> promptCreateKanbanProject()),
+                actionButton("Delete project", view -> promptDeleteKanbanProject()),
+                actionButton("Remove session", view -> promptRemoveKanbanSession())
+        ));
+        projectList = new LinearLayout(this);
+        projectList.setOrientation(LinearLayout.VERTICAL);
+        content.addView(projectList, matchWrap());
+
+        content.addView(sectionTitle("Group messages"));
+        content.addView(actionPanel(
+                actionButton("Messages", view -> promptGroupMessages()),
+                actionButton("Send message", view -> promptSendGroupMessage()),
+                actionButton("Scan message", view -> promptScanGroupMessage()),
+                actionButton("Post hook", view -> promptPostHookEvent())
+        ));
+        scroll.addView(content);
+        root.addView(scroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1
+        ));
+        root.addView(statusText, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(28)
+        ));
+        setStatus("Projects");
+        refreshProjects();
+    }
+
     private void renderUpdateScreen() {
         closeTerminalSocket();
         activeSessionName = null;
@@ -435,6 +496,11 @@ public final class MainActivity extends Activity {
             actionRow.addView(toolbarButton("Probe", view -> probeServerProfiles()));
             return;
         }
+        if (PAGE_PROJECTS.equals(activeMainPage)) {
+            actionRow.addView(toolbarButton("Refresh", view -> refreshProjects()));
+            actionRow.addView(toolbarButton("New", view -> promptCreateKanbanProject()));
+            return;
+        }
         if (PAGE_TOOLS.equals(activeMainPage)) {
             actionRow.addView(toolbarButton("Health", view -> showRaw("Health", () -> api.health())));
             actionRow.addView(toolbarButton("Probe", view -> probeServerProfiles()));
@@ -496,6 +562,7 @@ public final class MainActivity extends Activity {
             renderSessionScreen();
             refreshSessions();
         }));
+        row.addView(navButton(PAGE_PROJECTS, selected, view -> renderProjectsScreen()));
         row.addView(navButton(PAGE_TOOLS, selected, view -> renderToolsScreen()));
         row.addView(navButton(PAGE_UPDATE, selected, view -> renderUpdateScreen()));
         row.addView(navButton(PAGE_ABOUT, selected, view -> renderAboutScreen()));
@@ -617,6 +684,8 @@ public final class MainActivity extends Activity {
         connectAppEvents();
         if (PAGE_SESSIONS.equals(activeMainPage)) {
             refreshSessions();
+        } else if (PAGE_PROJECTS.equals(activeMainPage)) {
+            refreshProjects();
         }
     }
 
@@ -638,6 +707,141 @@ public final class MainActivity extends Activity {
                 runOnUiThread(() -> progressBar.setVisibility(View.GONE));
             }
         });
+    }
+
+    private void refreshProjects() {
+        if (projectList != null) {
+            projectList.removeAllViews();
+            projectList.addView(projectStateText("Loading projects..."), matchWrap());
+        }
+        setStatus("Loading projects from " + api.getBaseUrl());
+        progressBar.setVisibility(View.VISIBLE);
+        executor.execute(() -> {
+            try {
+                String text = api.kanbanProjects();
+                runOnUiThread(() -> {
+                    renderProjectList(text);
+                    setStatus("Loaded projects");
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    if (projectList != null) {
+                        projectList.removeAllViews();
+                        projectList.addView(projectStateText("Project load failed:\n" + error.getMessage()), matchWrap());
+                    }
+                    showMessage("Project load failed: " + error.getMessage());
+                });
+            } finally {
+                runOnUiThread(() -> progressBar.setVisibility(View.GONE));
+            }
+        });
+    }
+
+    private void renderProjectList(String text) {
+        if (projectList == null) {
+            return;
+        }
+        projectList.removeAllViews();
+        try {
+            JSONObject rootObject = new JSONObject(text == null || text.isEmpty() ? "{}" : text);
+            JSONArray projects = rootObject.optJSONArray("projects");
+            if (projects == null || projects.length() == 0) {
+                projectList.addView(projectStateText("No projects"), matchWrap());
+                return;
+            }
+            for (int index = 0; index < projects.length(); index++) {
+                projectList.addView(projectCard(projects.getJSONObject(index)), matchWrap());
+            }
+        } catch (Exception error) {
+            projectList.addView(projectStateText(text == null || text.isEmpty() ? "(empty)" : text), matchWrap());
+        }
+    }
+
+    private TextView projectStateText(String text) {
+        TextView view = bodyText(text);
+        view.setTypeface(Typeface.MONOSPACE);
+        view.setTextIsSelectable(true);
+        view.setPadding(dp(12), dp(10), dp(12), dp(10));
+        view.setBackground(rounded(Color.rgb(12, 17, 23), 8, Color.rgb(42, 51, 61), 1));
+        return view;
+    }
+
+    private View projectCard(JSONObject project) {
+        String name = project.optString("name", "(unnamed)");
+        String path = project.optString("path", "");
+        String server = project.isNull("server") ? "" : project.optString("server", "");
+        JSONArray agents = project.optJSONArray("agents");
+        int agentCount = agents == null ? 0 : agents.length();
+
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(12), dp(11), dp(12), dp(11));
+        card.setBackground(rounded(Color.rgb(27, 33, 40), 8, Color.rgb(45, 54, 64), 1));
+
+        TextView title = new TextView(this);
+        title.setText(name);
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(17);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+
+        String detail = "path:" + defaultValue(path, "~")
+                + (server.isEmpty() ? "" : "  server:" + server)
+                + "  agents:" + agentCount;
+        TextView meta = bodyText(detail);
+        meta.setPadding(0, dp(4), 0, dp(8));
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.addView(toolbarButton("Messages", view -> showRaw("Group messages: " + name, () -> api.groupMessages(name))));
+        actions.addView(toolbarButton("Add", view -> promptAddKanbanSessionToProject(name)));
+        actions.addView(toolbarButton("Delete", view -> runApiAction("Delete kanban project", () -> api.deleteKanbanProject(name))));
+
+        card.addView(title);
+        card.addView(meta);
+        card.addView(actions);
+
+        if (agents != null && agents.length() > 0) {
+            TextView agentsTitle = bodyText("Agents");
+            agentsTitle.setTextColor(Color.rgb(139, 148, 158));
+            agentsTitle.setTypeface(Typeface.DEFAULT_BOLD);
+            agentsTitle.setPadding(0, dp(10), 0, dp(4));
+            card.addView(agentsTitle);
+            for (int index = 0; index < agents.length(); index++) {
+                JSONObject agent = agents.optJSONObject(index);
+                if (agent != null) {
+                    card.addView(projectAgentRow(name, agent), matchWrap());
+                }
+            }
+        }
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        params.bottomMargin = dp(8);
+        card.setLayoutParams(params);
+        return card;
+    }
+
+    private View projectAgentRow(String projectName, JSONObject agent) {
+        String sessionName = defaultValue(agent.optString("sessionName", ""), agent.optString("name", ""));
+        String label = defaultValue(agent.optString("name", ""), sessionName);
+        String kind = agent.optString("kind", "session");
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(3), 0, dp(3));
+
+        TextView name = bodyText(kind + "  " + label);
+        name.setSingleLine(true);
+        row.addView(name, new LinearLayout.LayoutParams(0, dp(38), 1));
+        if (!sessionName.isEmpty()) {
+            row.addView(toolbarButton("Open", view -> openTerminal(sessionName)));
+            row.addView(toolbarButton("Remove", view -> runApiAction("Remove kanban session", () ->
+                    api.removeKanbanSession(projectName, sessionName, false))));
+        }
+        return row;
     }
 
     private void renderSessionList(List<SessionSummary> sessions) {
@@ -753,6 +957,10 @@ public final class MainActivity extends Activity {
     private void openTerminal(String sessionName) {
         activeSessionName = sessionName;
         terminalBuffer.setLength(0);
+        queuedTerminalInput.setLength(0);
+        terminalConnected = false;
+        terminalRenderPending = false;
+        lastTerminalRenderMs = 0L;
         root.removeAllViews();
         root.addView(createTerminalTopBar(sessionName), matchWrap());
 
@@ -1021,6 +1229,10 @@ public final class MainActivity extends Activity {
 
     private void promptAddKanbanSession(String sessionName) {
         promptText("Add to kanban project", "project", "", projectName -> api.addKanbanSession(projectName, sessionName));
+    }
+
+    private void promptAddKanbanSessionToProject(String projectName) {
+        promptText("Add session to " + projectName, "session", "", sessionName -> api.addKanbanSession(projectName, sessionName));
     }
 
     private void promptRemoveKanbanSession() {
@@ -1405,7 +1617,9 @@ public final class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     progressBar.setVisibility(View.GONE);
                     showMessage(label + " done");
-                    if (activeSessionName == null) {
+                    if (PAGE_PROJECTS.equals(activeMainPage)) {
+                        refreshProjects();
+                    } else if (activeSessionName == null) {
                         refreshSessions();
                     }
                 });
@@ -1525,12 +1739,18 @@ public final class MainActivity extends Activity {
 
     private void connectTerminal(String sessionName) {
         closeTerminalSocket();
+        queuedTerminalInput.setLength(0);
+        terminalConnected = false;
         setStatus("Connecting " + sessionName);
         appendTerminal("[connecting]\r\n");
         terminalSocket = new TerminalSocketClient(new TerminalSocketClient.Listener() {
             @Override
             public void onConnected() {
-                runOnUiThread(() -> setStatus("Connected " + sessionName));
+                runOnUiThread(() -> {
+                    terminalConnected = true;
+                    setStatus("Connected " + sessionName);
+                    flushQueuedTerminalInput();
+                });
             }
 
             @Override
@@ -1548,7 +1768,10 @@ public final class MainActivity extends Activity {
 
             @Override
             public void onClosed() {
-                runOnUiThread(() -> setStatus("Disconnected " + sessionName));
+                runOnUiThread(() -> {
+                    terminalConnected = false;
+                    setStatus("Disconnected " + sessionName);
+                });
             }
         });
         terminalSocket.connect(api.getBaseUrl(), sessionName, TERMINAL_COLS, TERMINAL_ROWS);
@@ -1572,8 +1795,13 @@ public final class MainActivity extends Activity {
             return;
         }
         TerminalSocketClient socket = terminalSocket;
-        if (socket != null) {
+        if (socket != null && !socket.isClosed() && terminalConnected) {
             socket.sendInput(data);
+            return;
+        }
+        if (socket != null && !socket.isClosed()) {
+            queuedTerminalInput.append(data);
+            setStatus("Queued input until terminal connects");
             return;
         }
         executor.execute(() -> {
@@ -1585,6 +1813,15 @@ public final class MainActivity extends Activity {
                 runOnUiThread(() -> showMessage("Input failed: " + error.getMessage()));
             }
         });
+    }
+
+    private void flushQueuedTerminalInput() {
+        if (!terminalConnected || terminalSocket == null || queuedTerminalInput.length() == 0) {
+            return;
+        }
+        String data = queuedTerminalInput.toString();
+        queuedTerminalInput.setLength(0);
+        terminalSocket.sendInput(data);
     }
 
     private void pasteClipboard() {
@@ -1607,6 +1844,27 @@ public final class MainActivity extends Activity {
         if (terminalBuffer.length() > MAX_TERMINAL_CHARS) {
             terminalBuffer.delete(0, terminalBuffer.length() - MAX_TERMINAL_CHARS);
         }
+        scheduleTerminalRender();
+    }
+
+    private void scheduleTerminalRender() {
+        if (terminalRenderPending || terminalText == null) {
+            return;
+        }
+        terminalRenderPending = true;
+        long now = System.currentTimeMillis();
+        long delay = Math.max(0L, TERMINAL_RENDER_INTERVAL_MS - (now - lastTerminalRenderMs));
+        terminalText.postDelayed(() -> {
+            terminalRenderPending = false;
+            renderTerminalNow();
+        }, delay);
+    }
+
+    private void renderTerminalNow() {
+        if (terminalText == null || terminalScroll == null) {
+            return;
+        }
+        lastTerminalRenderMs = System.currentTimeMillis();
         terminalText.setText(renderAnsiForTerminal(terminalBuffer.toString()));
         terminalScroll.post(() -> terminalScroll.fullScroll(View.FOCUS_DOWN));
     }
@@ -1639,19 +1897,33 @@ public final class MainActivity extends Activity {
                 continue;
             }
 
-            int start = output.length();
-            output.append(item);
-            int finish = output.length();
-            output.setSpan(new ForegroundColorSpan(fg), start, finish, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            if (bg != Color.TRANSPARENT) {
-                output.setSpan(new BackgroundColorSpan(bg), start, finish, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            int runStart = index;
+            while (index < text.length()) {
+                char runItem = text.charAt(index);
+                if (runItem == '\r' || (runItem == '\u001b' && index + 1 < text.length() && text.charAt(index + 1) == '[')) {
+                    break;
+                }
+                index++;
             }
-            if (bold) {
-                output.setSpan(new StyleSpan(Typeface.BOLD), start, finish, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            }
-            index++;
+            appendTerminalRun(output, text.substring(runStart, index), fg, bg, bold);
         }
         return output;
+    }
+
+    private void appendTerminalRun(SpannableStringBuilder output, String text, int fg, int bg, boolean bold) {
+        if (text.isEmpty()) {
+            return;
+        }
+        int start = output.length();
+        output.append(text);
+        int finish = output.length();
+        output.setSpan(new ForegroundColorSpan(fg), start, finish, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        if (bg != Color.TRANSPARENT) {
+            output.setSpan(new BackgroundColorSpan(bg), start, finish, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        if (bold) {
+            output.setSpan(new StyleSpan(Typeface.BOLD), start, finish, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
     }
 
     private int findAnsiEnd(String text, int start) {
@@ -1885,6 +2157,9 @@ public final class MainActivity extends Activity {
     }
 
     private void closeTerminalSocket() {
+        terminalConnected = false;
+        queuedTerminalInput.setLength(0);
+        terminalRenderPending = false;
         if (terminalSocket != null) {
             terminalSocket.close();
             terminalSocket = null;
