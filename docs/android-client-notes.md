@@ -68,14 +68,15 @@ not kill a tmux session.
 
 Implemented now:
 
-- configurable base URL, defaulting to `http://127.0.0.1:3000`
+- configurable base URL, defaulting to `http://100.89.0.116:3000`
 - support for Tailscale URLs such as `http://100.x.y.z:3000`
 - native session list from `GET /api/sessions`
 - create, rename, command send, split, pane select, pane kill, pin, mute, and
   kill session through documented session/preference endpoints
 - basic live terminal through `/ws/terminal`
 - native event stream through `/ws/events`
-- bottom shortcut bar for `Esc`, `Tab`, `Ctrl+C`, arrows, page keys, and paste
+- bottom shortcut bar for `Esc`, `Tab`, `Ctrl+C`, `Ctrl+V`, arrows, page keys,
+  tmux prefix actions, and paste
 - shortcut delivery through the terminal WebSocket `input` message
 - native action center for health, server status, timeline, preferences, kanban
   projects, group messages, hook events, image file/URL upload, image preview

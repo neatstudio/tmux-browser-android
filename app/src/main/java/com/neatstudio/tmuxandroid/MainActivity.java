@@ -620,7 +620,12 @@ public final class MainActivity extends Activity {
                 "Page up",
                 "Page down",
                 "Session status",
-                "Send command"
+                "Send command",
+                "Tmux prefix",
+                "Detach tmux client",
+                "New tmux window",
+                "Next tmux window",
+                "Previous tmux window"
         };
         new AlertDialog.Builder(this)
                 .setTitle(sessionName)
@@ -654,6 +659,21 @@ public final class MainActivity extends Activity {
                             break;
                         case 6:
                             promptSendCommand(sessionName);
+                            break;
+                        case 7:
+                            sendTerminalInput("\u0002");
+                            break;
+                        case 8:
+                            sendTerminalInput("\u0002d");
+                            break;
+                        case 9:
+                            sendTerminalInput("\u0002c");
+                            break;
+                        case 10:
+                            sendTerminalInput("\u0002n");
+                            break;
+                        case 11:
+                            sendTerminalInput("\u0002p");
                             break;
                         default:
                             break;
@@ -1169,6 +1189,13 @@ public final class MainActivity extends Activity {
         addSoftKey(row, "^A", "\u0001");
         addSoftKey(row, "^E", "\u0005");
         addSoftKey(row, "^V", "\u0016");
+        addSoftKey(row, "^Z", "\u001a");
+        addSoftKey(row, "^\\", "\u001c");
+        addSoftKey(row, "Tmux", "\u0002");
+        addSoftKey(row, "Detach", "\u0002d");
+        addSoftKey(row, "NewWin", "\u0002c");
+        addSoftKey(row, "NextWin", "\u0002n");
+        addSoftKey(row, "PrevWin", "\u0002p");
         addSoftKey(row, "Left", "\u001b[D");
         addSoftKey(row, "Down", "\u001b[B");
         addSoftKey(row, "Up", "\u001b[A");

@@ -18,7 +18,8 @@ APIs directly:
 - native API action center for health, server status, timeline, preferences,
   kanban projects, group messages, hook events, image file/URL upload, image
   preview info, and native image preview display
-- mobile soft-key row for tmux-oriented input
+- mobile soft-key row for tmux-oriented input, including tmux prefix, detach,
+  new window, previous/next window, Ctrl keys, arrows, page keys, and paste
 - automatic update checks against a GitHub Release manifest
 - APK download, SHA-256 verification, and installer handoff
 
@@ -100,6 +101,10 @@ The first Android UI renders terminal output as basic monospace text with ANSI
 escape filtering. It is enough for shell-oriented remote testing, but it is not
 yet a complete xterm-compatible renderer for full-screen TUIs such as `vim` or
 `top`.
+
+The terminal toolbar and shortcut row include tmux prefix helpers. The app sends
+the same control bytes a keyboard would send, for example `Ctrl+B`, `Ctrl+B d`,
+`Ctrl+B c`, `Ctrl+B n`, and `Ctrl+B p`.
 
 All app features are native Android controls. Complex server objects such as
 kanban projects, preferences, timeline events, group messages, and image metadata
