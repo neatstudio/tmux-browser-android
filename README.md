@@ -9,6 +9,8 @@ APIs directly:
 - server URL management for Tailscale `100.x.y.z:3000` APIs
 - quick server selectors for `100.89.0.2`, `100.89.0.4`, `100.89.0.9`,
   `100.89.0.11`, and `100.89.0.116`
+- one-tap probe for the preset Tailscale APIs, showing health/version and
+  session counts
 - native tmux session list
 - create, rename, send command, split pane, select pane, kill pane, pin, mute,
   and kill session through HTTP API

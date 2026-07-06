@@ -447,6 +447,7 @@ public final class MainActivity extends Activity {
     private void showMainActions() {
         String[] items = {
                 "Health",
+                "Probe Tailscale APIs",
                 "Server status",
                 "Timeline",
                 "Preferences",
@@ -476,63 +477,66 @@ public final class MainActivity extends Activity {
                             showRaw("Health", () -> api.health());
                             break;
                         case 1:
-                            showRaw("Server status", () -> api.serverStatus());
+                            probeServerProfiles();
                             break;
                         case 2:
-                            showRaw("Timeline", () -> api.timeline(50));
+                            showRaw("Server status", () -> api.serverStatus());
                             break;
                         case 3:
-                            showRaw("Preferences", () -> api.preferences());
+                            showRaw("Timeline", () -> api.timeline(50));
                             break;
                         case 4:
-                            showRaw("All session details", () -> api.sessionsAll());
+                            showRaw("Preferences", () -> api.preferences());
                             break;
                         case 5:
-                            showRaw("Pane details", () -> api.sessionsPanes());
+                            showRaw("All session details", () -> api.sessionsAll());
                             break;
                         case 6:
-                            showRaw("Kanban projects", () -> api.kanbanProjects());
+                            showRaw("Pane details", () -> api.sessionsPanes());
                             break;
                         case 7:
-                            promptCreateKanbanProject();
+                            showRaw("Kanban projects", () -> api.kanbanProjects());
                             break;
                         case 8:
-                            promptDeleteKanbanProject();
+                            promptCreateKanbanProject();
                             break;
                         case 9:
-                            promptRemoveKanbanSession();
+                            promptDeleteKanbanProject();
                             break;
                         case 10:
-                            promptGroupMessages();
+                            promptRemoveKanbanSession();
                             break;
                         case 11:
-                            promptSendGroupMessage();
+                            promptGroupMessages();
                             break;
                         case 12:
-                            promptScanGroupMessage();
+                            promptSendGroupMessage();
                             break;
                         case 13:
-                            promptPostHookEvent();
+                            promptScanGroupMessage();
                             break;
                         case 14:
-                            promptUploadImageFile();
+                            promptPostHookEvent();
                             break;
                         case 15:
-                            promptUploadImageUrl();
+                            promptUploadImageFile();
                             break;
                         case 16:
-                            promptImagePreviewInfo();
+                            promptUploadImageUrl();
                             break;
                         case 17:
-                            promptOpenImagePreview();
+                            promptImagePreviewInfo();
                             break;
                         case 18:
-                            openExternalUrl(BuildConfig.DEFAULT_APK_URL);
+                            promptOpenImagePreview();
                             break;
                         case 19:
-                            showUpdateSourcePicker();
+                            openExternalUrl(BuildConfig.DEFAULT_APK_URL);
                             break;
                         case 20:
+                            showUpdateSourcePicker();
+                            break;
+                        case 21:
                             showPermissionsAndUpdateStatus();
                             break;
                         default:
@@ -1018,6 +1022,36 @@ public final class MainActivity extends Activity {
     private void setUpdateUrl(String url) {
         prefs.edit().putString("update_url", url).apply();
         showMessage("Update source: " + url);
+    }
+
+    private void probeServerProfiles() {
+        progressBar.setVisibility(View.VISIBLE);
+        setStatus("Probing Tailscale APIs...");
+        executor.execute(() -> {
+            StringBuilder text = new StringBuilder();
+            for (String url : SERVER_PROFILES) {
+                text.append(url).append('\n');
+                try {
+                    SessionApiClient client = new SessionApiClient(url);
+                    JSONObject health = new JSONObject(client.health());
+                    List<SessionSummary> sessions = client.getSessions();
+                    text.append("  ok: true\n");
+                    text.append("  version: ")
+                            .append(health.optString("version", "unknown"))
+                            .append(" ")
+                            .append(health.optString("commit", ""))
+                            .append('\n');
+                    text.append("  sessions: ").append(sessions.size()).append('\n');
+                } catch (Exception error) {
+                    text.append("  failed: ").append(error.getMessage()).append('\n');
+                }
+                text.append('\n');
+            }
+            runOnUiThread(() -> {
+                progressBar.setVisibility(View.GONE);
+                showTextDialog("Tailscale APIs", text.toString());
+            });
+        });
     }
 
     private void openInstallPermissionSettings() {
