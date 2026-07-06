@@ -82,10 +82,10 @@ https://github.com/neatstudio/tmux-browser-android/releases/latest/download/tmux
 https://github.com/neatstudio/tmux-browser-android/releases/latest/download/latest.json
 ```
 
-Those GitHub links are the stable public install/update channel. Gitea releases
-are mirrored for internal tracking, but the current Gitea org/repo visibility
-keeps anonymous release downloads behind login, so phones should use GitHub for
-no-login install and in-app updates.
+Those GitHub links are the primary public install/update channel. Gitea releases
+are mirrored as a second public source. This Gitea instance does not support the
+GitHub-style `/releases/latest/download/...` URL, so the app uses the Gitea
+Release API as the stable Gitea update entrypoint.
 
 Plain branch builds only create Actions artifacts; they are useful for CI
 verification, but releases are the stable download/update channel.
@@ -143,11 +143,17 @@ https://github.com/neatstudio/tmux-browser-android/releases/latest/download/tmux
 ```
 
 The app tries the selected update source first, then falls back to the GitHub
-manifest and the Gitea release API. GitHub is the reliable no-login source today.
-The Gitea API endpoint is:
+manifest and the Gitea release API. The Gitea API endpoint is:
 
 ```text
 https://gitea.neatcn.com/api/v1/repos/tmux/tmux-browser-android/releases/latest
+```
+
+Gitea tag-specific assets are also public, for example:
+
+```text
+https://gitea.neatcn.com/tmux/tmux-browser-android/releases/download/v0.1.7/latest.json
+https://gitea.neatcn.com/tmux/tmux-browser-android/releases/download/v0.1.7/tmux-android.apk
 ```
 
 In the app:

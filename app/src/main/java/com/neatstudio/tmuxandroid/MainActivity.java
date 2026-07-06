@@ -962,8 +962,8 @@ public final class MainActivity extends Activity {
         text.append("Selected manifest:\n")
                 .append(prefs.getString("update_url", BuildConfig.DEFAULT_UPDATE_URL))
                 .append('\n');
-        text.append("GitHub manifest:\n").append(BuildConfig.DEFAULT_UPDATE_URL).append('\n');
-        text.append("Gitea release API:\n").append(BuildConfig.DEFAULT_GITEA_UPDATE_URL).append('\n');
+        text.append("GitHub primary manifest:\n").append(BuildConfig.DEFAULT_UPDATE_URL).append('\n');
+        text.append("Gitea public mirror API:\n").append(BuildConfig.DEFAULT_GITEA_UPDATE_URL).append('\n');
         text.append('\n');
         text.append("Network: manifest permission, no runtime grant required\n");
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
