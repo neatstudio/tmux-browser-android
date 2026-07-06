@@ -2020,6 +2020,14 @@ public final class MainActivity extends Activity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        if (updateManager != null) {
+            updateManager.resumePendingInstall();
+        }
+    }
+
+    @Override
     protected void onDestroy() {
         closeTerminalSocket();
         if (eventSocket != null) {

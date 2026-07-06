@@ -106,7 +106,9 @@ provider checks.
 Downloaded APKs are cached by `versionCode`. If a cached APK exists and its
 SHA-256 matches the manifest, the app reuses it instead of downloading the same
 version again. This matters when Android redirects the user to unknown-app
-install settings before the installer can run.
+install settings before the installer can run. After the user grants that
+permission and returns to the app, the app resumes installation of the pending
+APK instead of asking the user to run update again.
 
 Only `v*` tags publish GitHub Releases. Main branch builds are for CI artifacts
 and should be used to validate grouped changes. Do not publish a new tag for

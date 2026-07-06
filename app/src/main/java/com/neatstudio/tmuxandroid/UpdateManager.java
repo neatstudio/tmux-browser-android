@@ -25,6 +25,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 final class UpdateManager {
+    private static final String PREF_PENDING_INSTALL_APK = "pending_install_apk";
+
     interface Callback {
         void onChecking(boolean checking);
         void onMessage(String message);
@@ -34,8 +36,9 @@ final class UpdateManager {
     private final SharedPreferences prefs;
     private final Callback callback;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private boolean checkInProgress;
-    private boolean downloadInProgress;
+    private volatile boolean checkInProgress;
+    private volatile boolean downloadInProgress;
+    private File pendingInstallApk;
 
     UpdateManager(Activity activity, SharedPreferences prefs, Callback callback) {
         this.activity = activity;
@@ -226,15 +229,19 @@ final class UpdateManager {
     private void installApk(File apk) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 && !activity.getPackageManager().canRequestPackageInstalls()) {
+            pendingInstallApk = apk;
+            prefs.edit().putString(PREF_PENDING_INSTALL_APK, apk.getAbsolutePath()).apply();
             Intent settingsIntent = new Intent(
                     Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                     Uri.parse("package:" + activity.getPackageName())
             );
             activity.startActivity(settingsIntent);
-            Toast.makeText(activity, "Allow installs, then run update again", Toast.LENGTH_LONG).show();
+            Toast.makeText(activity, "Allow installs, then return to continue", Toast.LENGTH_LONG).show();
             postMessage("Install permission required");
             return;
         }
+        pendingInstallApk = null;
+        prefs.edit().remove(PREF_PENDING_INSTALL_APK).apply();
 
         Uri apkUri = UpdateFileProvider.getUriForFile(
                 activity,
@@ -251,6 +258,32 @@ final class UpdateManager {
         } catch (ActivityNotFoundException error) {
             postMessage("No package installer found");
         }
+    }
+
+    void resumePendingInstall() {
+        File apk = pendingInstallApk;
+        if (apk == null) {
+            String path = prefs.getString(PREF_PENDING_INSTALL_APK, "");
+            if (path != null && !path.isEmpty()) {
+                apk = new File(path);
+                pendingInstallApk = apk;
+            }
+        }
+        if (apk == null) {
+            return;
+        }
+        if (!apk.exists() || apk.length() <= 0) {
+            pendingInstallApk = null;
+            prefs.edit().remove(PREF_PENDING_INSTALL_APK).apply();
+            postMessage("Downloaded APK is no longer available");
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                && !activity.getPackageManager().canRequestPackageInstalls()) {
+            return;
+        }
+        postMessage("Continuing APK install...");
+        installApk(apk);
     }
 
     private static byte[] readAllBytes(InputStream input) throws Exception {

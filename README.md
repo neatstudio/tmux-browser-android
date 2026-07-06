@@ -174,6 +174,9 @@ In the app:
   SHA-256, and open Android's installer.
 - If the same version APK was already downloaded and its SHA-256 still matches,
   the app reuses that file instead of downloading it again.
+- If Android sends you to the unknown-app install permission screen, return to
+  the app after allowing it; the app continues installing the already downloaded
+  APK without another update check or download.
 - Open `More` -> `Open APK download` to download the current public APK in a
   browser.
 - Open the `Update` page or `More` -> `Permissions / update status` to see the
