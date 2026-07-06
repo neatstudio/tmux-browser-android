@@ -3,7 +3,6 @@ package com.neatstudio.tmuxandroid;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -296,7 +295,7 @@ public final class MainActivity extends Activity {
         content.addView(actionPanel(
                 actionButton("Check now", view -> updateManager.check(true)),
                 actionButton("Source", view -> showUpdateSourcePicker()),
-                actionButton("APK", view -> openExternalUrl(BuildConfig.DEFAULT_APK_URL))
+                actionButton("APK", view -> updateManager.openApkDownload())
         ));
         content.addView(sectionTitle("Permissions"));
         content.addView(infoBlock("Android", permissionSummary()));
@@ -351,7 +350,7 @@ public final class MainActivity extends Activity {
                 "The app checks only the selected update source. APK downloads are cached by version and reused after Android install permission is granted."
         ));
         content.addView(actionPanel(
-                actionButton("Release page", view -> openExternalUrl(BuildConfig.DEFAULT_RELEASE_PAGE_URL)),
+                actionButton("Release page", view -> updateManager.openReleasePage()),
                 actionButton("Update source", view -> showUpdateSourcePicker()),
                 actionButton("Permissions", view -> showPermissionsAndUpdateStatus())
         ));
@@ -429,7 +428,7 @@ public final class MainActivity extends Activity {
             return;
         }
         if (PAGE_ABOUT.equals(activeMainPage)) {
-            actionRow.addView(toolbarButton("Release", view -> openExternalUrl(BuildConfig.DEFAULT_RELEASE_PAGE_URL)));
+            actionRow.addView(toolbarButton("Release", view -> updateManager.openReleasePage()));
             actionRow.addView(toolbarButton("Permissions", view -> showPermissionsAndUpdateStatus()));
         }
     }
@@ -1181,12 +1180,10 @@ public final class MainActivity extends Activity {
                 .append(")\n");
         text.append("Server: ").append(getServerUrl()).append('\n');
         text.append('\n');
-        text.append("Manual APK download:\n")
-                .append(BuildConfig.DEFAULT_APK_URL)
-                .append('\n');
-        text.append("Release page:\n")
-                .append(BuildConfig.DEFAULT_RELEASE_PAGE_URL)
-                .append('\n');
+        text.append("Manual APK download:\n");
+        text.append("Tap APK on the Update page. The app resolves the APK from the selected update source.\n");
+        text.append("Release page:\n");
+        text.append("Tap Release on the About page. The app resolves the page from the selected update source.\n");
         text.append('\n');
         text.append("In-app update:\n");
         text.append("Tap Update. The app checks only the selected source, downloads one APK per version, verifies SHA-256, then opens Android's installer.\n");
@@ -1227,14 +1224,6 @@ public final class MainActivity extends Activity {
         }
         text.append("SMS: not requested. This tmux client does not need SMS permission.");
         return text.toString();
-    }
-
-    private void openExternalUrl(String url) {
-        try {
-            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
-        } catch (ActivityNotFoundException error) {
-            showMessage("No app can open URL");
-        }
     }
 
     private void showUpdateSourcePicker() {

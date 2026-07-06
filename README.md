@@ -177,8 +177,8 @@ In the app:
 - If Android sends you to the unknown-app install permission screen, return to
   the app after allowing it; the app continues installing the already downloaded
   APK without another update check or download.
-- Open the `Update` page and tap `APK` to download the current public APK in a
-  browser.
+- Open the `Update` page and tap `APK` to resolve the APK from the selected
+  update source and open it in a browser.
 - Open the `Update` page and tap `Details` to see the installed version,
   selected update source, APK URL, install permission state, and a `Check
   update` button.

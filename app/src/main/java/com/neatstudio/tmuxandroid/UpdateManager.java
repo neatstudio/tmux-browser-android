@@ -32,6 +32,10 @@ final class UpdateManager {
         void onMessage(String message);
     }
 
+    private interface ReleaseUrlPicker {
+        String pick(ReleaseInfo info);
+    }
+
     private final Activity activity;
     private final SharedPreferences prefs;
     private final Callback callback;
@@ -66,6 +70,40 @@ final class UpdateManager {
                 activity.runOnUiThread(() -> showUpdateDialog(info));
             } catch (Exception error) {
                 postMessage(userInitiated ? "Update check failed: " + error.getMessage() : null);
+            } finally {
+                checkInProgress = false;
+                activity.runOnUiThread(() -> callback.onChecking(false));
+            }
+        });
+    }
+
+    void openApkDownload() {
+        openSelectedReleaseUrl("APK", info -> info.apkUrl);
+    }
+
+    void openReleasePage() {
+        openSelectedReleaseUrl("Release page", info -> info.releasePageUrl);
+    }
+
+    private void openSelectedReleaseUrl(String label, ReleaseUrlPicker picker) {
+        if (checkInProgress) {
+            postMessage("Update check already running");
+            return;
+        }
+        String manifestUrl = getUpdateManifestUrl();
+        checkInProgress = true;
+        callback.onChecking(true);
+        postMessage("Resolving " + label + " from " + hostLabel(manifestUrl) + "...");
+        executor.execute(() -> {
+            try {
+                ReleaseInfo info = fetchReleaseInfo(manifestUrl);
+                String url = picker.pick(info);
+                if (url == null || url.trim().isEmpty()) {
+                    throw new IllegalStateException(label + " URL is missing");
+                }
+                activity.runOnUiThread(() -> openExternalUrl(url.trim(), label));
+            } catch (Exception error) {
+                postMessage(label + " failed: " + error.getMessage());
             } finally {
                 checkInProgress = false;
                 activity.runOnUiThread(() -> callback.onChecking(false));
@@ -257,6 +295,15 @@ final class UpdateManager {
             postMessage("Opened Android package installer");
         } catch (ActivityNotFoundException error) {
             postMessage("No package installer found");
+        }
+    }
+
+    private void openExternalUrl(String url, String label) {
+        try {
+            activity.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+            postMessage("Opened " + label);
+        } catch (ActivityNotFoundException error) {
+            postMessage("No app can open " + label);
         }
     }
 
