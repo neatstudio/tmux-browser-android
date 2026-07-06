@@ -14,6 +14,8 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.StateListDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -138,8 +140,8 @@ public final class MainActivity extends Activity {
         statusText.setTextColor(Color.rgb(210, 215, 224));
         statusText.setTextSize(12);
         statusText.setGravity(Gravity.CENTER_VERTICAL);
-        statusText.setPadding(dp(8), 0, dp(8), 0);
-        statusText.setBackgroundColor(Color.rgb(29, 34, 41));
+        statusText.setPadding(dp(10), 0, dp(10), 0);
+        statusText.setBackground(rounded(Color.rgb(22, 27, 34), 0, Color.TRANSPARENT, 0));
         statusText.setSingleLine(true);
         setStatus("Ready");
         applySystemBarInsets(root);
@@ -214,6 +216,7 @@ public final class MainActivity extends Activity {
         urlField.setImeOptions(EditorInfo.IME_ACTION_GO);
         urlField.setText(getServerUrl());
         urlField.setSelectAllOnFocus(true);
+        styleInput(urlField);
         urlField.setOnEditorActionListener((view, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_GO) {
                 saveServerAndRefresh();
@@ -314,8 +317,11 @@ public final class MainActivity extends Activity {
     private View sessionRow(SessionSummary session) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.VERTICAL);
-        row.setPadding(dp(10), dp(10), dp(10), dp(10));
-        row.setBackgroundColor(Color.rgb(29, 34, 41));
+        row.setPadding(dp(12), dp(11), dp(12), dp(11));
+        row.setBackground(rounded(Color.rgb(27, 33, 40), 8, Color.rgb(45, 54, 64), 1));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            row.setElevation(dp(1));
+        }
 
         TextView title = new TextView(this);
         title.setText(session.name);
@@ -716,6 +722,7 @@ public final class MainActivity extends Activity {
         inputField.setHint("type command or text");
         inputField.setImeOptions(EditorInfo.IME_ACTION_SEND);
         inputField.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        styleInput(inputField);
         inputField.setOnEditorActionListener((view, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_SEND) {
                 sendLine();
@@ -1212,6 +1219,7 @@ public final class MainActivity extends Activity {
         input.setSingleLine(true);
         input.setText(value);
         input.setSelectAllOnFocus(true);
+        styleInput(input);
         form.addView(title);
         form.addView(input, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1505,11 +1513,15 @@ public final class MainActivity extends Activity {
     private Button toolbarButton(String label, View.OnClickListener listener) {
         Button button = new Button(this);
         button.setText(label);
+        button.setTextColor(Color.rgb(235, 241, 248));
         button.setTextSize(12);
         button.setAllCaps(false);
+        button.setTypeface(Typeface.DEFAULT_BOLD);
         button.setMinWidth(0);
         button.setMinimumWidth(0);
-        button.setPadding(dp(8), 0, dp(8), 0);
+        button.setPadding(dp(10), 0, dp(10), 0);
+        button.setBackground(buttonBackground());
+        button.setGravity(Gravity.CENTER);
         button.setOnClickListener(listener);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -1518,6 +1530,33 @@ public final class MainActivity extends Activity {
         params.leftMargin = dp(5);
         button.setLayoutParams(params);
         return button;
+    }
+
+    private void styleInput(EditText input) {
+        input.setTextColor(Color.rgb(240, 246, 252));
+        input.setHintTextColor(Color.rgb(139, 148, 158));
+        input.setTextSize(14);
+        input.setSingleLine(true);
+        input.setPadding(dp(10), 0, dp(10), 0);
+        input.setBackground(rounded(Color.rgb(12, 17, 23), 8, Color.rgb(48, 58, 70), 1));
+    }
+
+    private StateListDrawable buttonBackground() {
+        StateListDrawable states = new StateListDrawable();
+        states.addState(new int[]{android.R.attr.state_pressed}, rounded(Color.rgb(64, 78, 94), 8, Color.rgb(91, 108, 128), 1));
+        states.addState(new int[]{android.R.attr.state_focused}, rounded(Color.rgb(48, 61, 76), 8, Color.rgb(98, 128, 164), 1));
+        states.addState(new int[]{}, rounded(Color.rgb(34, 43, 53), 8, Color.rgb(55, 66, 80), 1));
+        return states;
+    }
+
+    private GradientDrawable rounded(int color, int radiusDp, int strokeColor, int strokeDp) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setColor(color);
+        drawable.setCornerRadius(dp(radiusDp));
+        if (strokeDp > 0) {
+            drawable.setStroke(dp(strokeDp), strokeColor);
+        }
+        return drawable;
     }
 
     private void addSoftKey(LinearLayout row, String label, String sequence) {
