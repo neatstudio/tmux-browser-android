@@ -16,14 +16,17 @@ APIs directly:
   and kill session through HTTP API
 - open one live terminal viewer through `/ws/terminal`
 - native `/ws/events` listener for session invalidation and hook notifications
-- GitHub and Gitea update manifest mirrors with fallback
+- selectable GitHub or Gitea update manifest source
 - native API action center for health, server status, timeline, preferences,
   kanban projects, group messages, hook events, image file/URL upload, image
   preview info, and native image preview display
 - mobile soft-key row for tmux-oriented input, including tmux prefix, detach,
   new window, previous/next window, Ctrl keys, arrows, page keys, and paste
-- automatic update checks against a GitHub Release manifest
-- APK download, SHA-256 verification, and installer handoff
+- automatic update checks against the selected release manifest
+- one-download-per-version APK cache, SHA-256 verification, and installer
+  handoff
+- native Update and About pages for version, protocol, permission, and release
+  information
 
 ## Server URL
 
@@ -75,7 +78,12 @@ Create the base64 value from your release keystore:
 base64 -w 0 tmux-android-release.jks
 ```
 
-Publish a test build by pushing a `v*` tag. That creates a GitHub Release with:
+Branch builds create Actions artifacts only. Use them to verify grouped changes
+before publishing.
+
+Publish a release build by pushing a `v*` tag. A tag should be reserved for a
+coherent feature/test batch, not every small UI or text change. Tag publishing
+creates a GitHub Release with:
 
 ```text
 https://github.com/neatstudio/tmux-browser-android/releases/latest/download/tmux-android.apk
@@ -143,8 +151,11 @@ The public manual APK download is:
 https://github.com/neatstudio/tmux-browser-android/releases/latest/download/tmux-android.apk
 ```
 
-The app tries the selected update source first, then falls back to the GitHub
-manifest and the Gitea release API. The Gitea API endpoint is:
+The app checks only the selected update source. It does not probe GitHub and
+Gitea during the same update check. Choose the source in the app's `Update`
+page, or use a custom manifest/API URL.
+
+The built-in Gitea API endpoint is:
 
 ```text
 https://gitea.neatcn.com/api/v1/repos/tmux/tmux-browser-android/releases/latest
@@ -159,10 +170,14 @@ https://gitea.neatcn.com/tmux/tmux-browser-android/releases/download/v0.1.7/tmux
 
 In the app:
 
-- Tap `Update` on the main screen to check `latest.json`, download the APK,
-  verify SHA-256, and open Android's installer.
+- Open the `Update` page to check `latest.json`, download the APK, verify
+  SHA-256, and open Android's installer.
+- If the same version APK was already downloaded and its SHA-256 still matches,
+  the app reuses that file instead of downloading it again.
 - Open `More` -> `Open APK download` to download the current public APK in a
   browser.
-- Open `More` -> `Permissions / update status` to see the installed version,
-  update manifest, APK URL, install permission state, and a `Check update`
-  button.
+- Open the `Update` page or `More` -> `Permissions / update status` to see the
+  installed version, selected update source, APK URL, install permission state,
+  and a `Check update` button.
+- Open the `About` page to see the app version, package name, API/protocol
+  summary, and update policy.

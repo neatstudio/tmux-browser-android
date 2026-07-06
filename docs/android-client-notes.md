@@ -70,6 +70,7 @@ Implemented now:
 
 - configurable base URL, defaulting to `http://100.89.0.116:3000`
 - support for Tailscale URLs such as `http://100.x.y.z:3000`
+- native multi-page shell with `Sessions`, `Tools`, `Update`, and `About`
 - native session list from `GET /api/sessions`
 - create, rename, command send, split, pane select, pane kill, pin, mute, and
   kill session through documented session/preference endpoints
@@ -83,7 +84,34 @@ Implemented now:
   metadata, and native image preview display
 - GitHub Actions APK build
 - release manifest `latest.json`
-- APK download, SHA-256 verification, and installer handoff
+- selected-source update checks; GitHub and Gitea are not probed in the same
+  update check
+- one-download-per-version APK cache, SHA-256 verification, and installer
+  handoff
+- permission/about surfaces for unknown-app install status, notification status,
+  app version, package name, and API/protocol summary
+
+## Update And Release Policy
+
+The Android app cannot silently replace itself. It may download a newer APK and
+open Android's package installer, but the user must approve the install. On
+Android 8+, the user may also need to allow this app to install unknown apps.
+
+The app checks exactly one update source per run: the selected manifest/API URL.
+GitHub is the default public source. Gitea is available as a public mirror, but
+the app does not fall back across both providers during a normal check. This
+keeps update behavior predictable on mobile networks and avoids duplicate
+provider checks.
+
+Downloaded APKs are cached by `versionCode`. If a cached APK exists and its
+SHA-256 matches the manifest, the app reuses it instead of downloading the same
+version again. This matters when Android redirects the user to unknown-app
+install settings before the installer can run.
+
+Only `v*` tags publish GitHub Releases. Main branch builds are for CI artifacts
+and should be used to validate grouped changes. Do not publish a new tag for
+every small UI copy or layout change; publish when there is a useful feature or
+test batch for phone-side validation.
 
 ## Native Roadmap
 
