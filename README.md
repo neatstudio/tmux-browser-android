@@ -12,6 +12,7 @@ APIs directly:
 - one-tap probe for the preset Tailscale APIs, showing health/version and
   session counts
 - native tmux session list
+- Sessions page with current API/server and loaded session count
 - create, rename, send command, split pane, select pane, kill pane, pin, mute,
   and kill session through HTTP API
 - open one live terminal viewer through `/ws/terminal`

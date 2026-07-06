@@ -81,6 +81,7 @@ public final class MainActivity extends Activity {
     private EditText urlField;
     private ProgressBar progressBar;
     private TextView statusText;
+    private TextView sessionSummaryText;
     private TextView terminalText;
     private ScrollView terminalScroll;
     private EditText inputField;
@@ -190,11 +191,14 @@ public final class MainActivity extends Activity {
         ));
 
         ScrollView scroll = new ScrollView(this);
+        LinearLayout content = pageContent();
+        content.addView(sessionSummaryBlock());
+        content.addView(sectionTitle("Tmux sessions"));
         LinearLayout list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
-        list.setPadding(dp(8), dp(8), dp(8), dp(8));
         list.setTag("session-list");
-        scroll.addView(list);
+        content.addView(list);
+        scroll.addView(content);
         root.addView(scroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
@@ -204,6 +208,15 @@ public final class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(28)
         ));
+    }
+
+    private View sessionSummaryBlock() {
+        View block = infoBlock(
+                "Active API",
+                "Server: " + getServerUrl() + "\nSessions: loading"
+        );
+        sessionSummaryText = findBodyText(block);
+        return block;
     }
 
     private void renderToolsScreen() {
@@ -547,6 +560,17 @@ public final class MainActivity extends Activity {
         return block;
     }
 
+    private TextView findBodyText(View block) {
+        if (!(block instanceof LinearLayout)) {
+            return null;
+        }
+        LinearLayout layout = (LinearLayout) block;
+        if (layout.getChildCount() < 2 || !(layout.getChildAt(1) instanceof TextView)) {
+            return null;
+        }
+        return (TextView) layout.getChildAt(1);
+    }
+
     private LinearLayout actionPanel(Button... buttons) {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
@@ -602,7 +626,12 @@ public final class MainActivity extends Activity {
                 List<SessionSummary> sessions = api.getSessions();
                 runOnUiThread(() -> renderSessionList(sessions));
             } catch (Exception error) {
-                runOnUiThread(() -> showMessage("Session load failed: " + error.getMessage()));
+                runOnUiThread(() -> {
+                    if (sessionSummaryText != null) {
+                        sessionSummaryText.setText("Server: " + getServerUrl() + "\nSessions: failed - " + error.getMessage());
+                    }
+                    showMessage("Session load failed: " + error.getMessage());
+                });
             } finally {
                 runOnUiThread(() -> progressBar.setVisibility(View.GONE));
             }
@@ -622,6 +651,9 @@ public final class MainActivity extends Activity {
         }
         for (SessionSummary session : sessions) {
             list.addView(sessionRow(session), matchWrap());
+        }
+        if (sessionSummaryText != null) {
+            sessionSummaryText.setText("Server: " + getServerUrl() + "\nSessions: " + sessions.size());
         }
         setStatus("Loaded " + sessions.size() + " sessions");
     }
