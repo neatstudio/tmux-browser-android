@@ -18,11 +18,17 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
 import android.text.InputType;
+import android.text.style.BackgroundColorSpan;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.StyleSpan;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
+import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
 import android.widget.EditText;
@@ -99,6 +105,7 @@ public final class MainActivity extends Activity {
             getWindow().setStatusBarColor(Color.rgb(17, 20, 24));
             getWindow().setNavigationBarColor(Color.rgb(17, 20, 24));
         }
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         api = new SessionApiClient(getServerUrl());
         setContentView(createRoot());
         updateManager = new UpdateManager(this, prefs, new UpdateManager.Callback() {
@@ -141,11 +148,15 @@ public final class MainActivity extends Activity {
 
     private void applySystemBarInsets(View view) {
         view.setOnApplyWindowInsetsListener((target, insets) -> {
+            int bottom = insets.getSystemWindowInsetBottom();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                bottom = Math.max(bottom, insets.getInsets(WindowInsets.Type.ime()).bottom);
+            }
             target.setPadding(
                     0,
                     insets.getSystemWindowInsetTop(),
                     0,
-                    insets.getSystemWindowInsetBottom()
+                    bottom
             );
             return insets;
         });
@@ -394,13 +405,18 @@ public final class MainActivity extends Activity {
         root.addView(createTerminalTopBar(sessionName), matchWrap());
 
         terminalScroll = new ScrollView(this);
+        terminalScroll.setFillViewport(true);
+        terminalScroll.setBackgroundColor(Color.rgb(4, 7, 10));
         terminalText = new TextView(this);
         terminalText.setTextColor(Color.rgb(230, 235, 242));
-        terminalText.setTextSize(12);
+        terminalText.setTextSize(13);
         terminalText.setTypeface(Typeface.MONOSPACE);
-        terminalText.setTextIsSelectable(true);
-        terminalText.setPadding(dp(8), dp(8), dp(8), dp(8));
-        terminalText.setBackgroundColor(Color.BLACK);
+        terminalText.setIncludeFontPadding(false);
+        terminalText.setLineSpacing(0, 1.05f);
+        terminalText.setGravity(Gravity.BOTTOM | Gravity.START);
+        terminalText.setTextIsSelectable(false);
+        terminalText.setPadding(dp(10), dp(10), dp(10), dp(10));
+        terminalText.setBackgroundColor(Color.rgb(4, 7, 10));
         terminalScroll.addView(terminalText, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -1330,14 +1346,118 @@ public final class MainActivity extends Activity {
         if (terminalBuffer.length() > MAX_TERMINAL_CHARS) {
             terminalBuffer.delete(0, terminalBuffer.length() - MAX_TERMINAL_CHARS);
         }
-        terminalText.setText(stripAnsiForBasicView(terminalBuffer.toString()));
+        terminalText.setText(renderAnsiForTerminal(terminalBuffer.toString()));
         terminalScroll.post(() -> terminalScroll.fullScroll(View.FOCUS_DOWN));
     }
 
-    private String stripAnsiForBasicView(String text) {
-        return text
-                .replaceAll("\u001B\\[[0-?]*[ -/]*[@-~]", "")
-                .replace("\r", "");
+    private CharSequence renderAnsiForTerminal(String text) {
+        SpannableStringBuilder output = new SpannableStringBuilder();
+        int fg = Color.rgb(230, 235, 242);
+        int bg = Color.TRANSPARENT;
+        boolean bold = false;
+        int index = 0;
+        while (index < text.length()) {
+            char item = text.charAt(index);
+            if (item == '\r') {
+                index++;
+                continue;
+            }
+            if (item == '\u001b' && index + 1 < text.length() && text.charAt(index + 1) == '[') {
+                int end = findAnsiEnd(text, index + 2);
+                if (end == -1) {
+                    break;
+                }
+                char command = text.charAt(end);
+                if (command == 'm') {
+                    int[] state = applySgr(text.substring(index + 2, end), fg, bg, bold);
+                    fg = state[0];
+                    bg = state[1];
+                    bold = state[2] == 1;
+                }
+                index = end + 1;
+                continue;
+            }
+
+            int start = output.length();
+            output.append(item);
+            int finish = output.length();
+            output.setSpan(new ForegroundColorSpan(fg), start, finish, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            if (bg != Color.TRANSPARENT) {
+                output.setSpan(new BackgroundColorSpan(bg), start, finish, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            if (bold) {
+                output.setSpan(new StyleSpan(Typeface.BOLD), start, finish, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            index++;
+        }
+        return output;
+    }
+
+    private int findAnsiEnd(String text, int start) {
+        for (int index = start; index < text.length(); index++) {
+            char item = text.charAt(index);
+            if (item >= '@' && item <= '~') {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private int[] applySgr(String params, int fg, int bg, boolean bold) {
+        if (params.isEmpty()) {
+            params = "0";
+        }
+        String[] parts = params.split(";");
+        for (String part : parts) {
+            int value;
+            try {
+                value = part.isEmpty() ? 0 : Integer.parseInt(part);
+            } catch (NumberFormatException ignored) {
+                continue;
+            }
+            if (value == 0) {
+                fg = Color.rgb(230, 235, 242);
+                bg = Color.TRANSPARENT;
+                bold = false;
+            } else if (value == 1) {
+                bold = true;
+            } else if (value == 22) {
+                bold = false;
+            } else if (value == 39) {
+                fg = Color.rgb(230, 235, 242);
+            } else if (value == 49) {
+                bg = Color.TRANSPARENT;
+            } else if ((value >= 30 && value <= 37) || (value >= 90 && value <= 97)) {
+                fg = ansiColor(value, false);
+            } else if ((value >= 40 && value <= 47) || (value >= 100 && value <= 107)) {
+                bg = ansiColor(value, true);
+            }
+        }
+        return new int[]{fg, bg, bold ? 1 : 0};
+    }
+
+    private int ansiColor(int code, boolean background) {
+        int base = background ? (code >= 100 ? code - 100 : code - 40) : (code >= 90 ? code - 90 : code - 30);
+        boolean bright = code >= 90;
+        switch (base) {
+            case 0:
+                return bright ? Color.rgb(80, 88, 100) : Color.rgb(33, 38, 45);
+            case 1:
+                return bright ? Color.rgb(255, 123, 114) : Color.rgb(248, 81, 73);
+            case 2:
+                return bright ? Color.rgb(86, 211, 100) : Color.rgb(63, 185, 80);
+            case 3:
+                return bright ? Color.rgb(234, 179, 8) : Color.rgb(210, 153, 34);
+            case 4:
+                return bright ? Color.rgb(121, 192, 255) : Color.rgb(88, 166, 255);
+            case 5:
+                return bright ? Color.rgb(210, 168, 255) : Color.rgb(188, 140, 255);
+            case 6:
+                return bright ? Color.rgb(86, 211, 219) : Color.rgb(57, 197, 187);
+            case 7:
+            default:
+                return bright ? Color.rgb(240, 246, 252) : Color.rgb(201, 209, 217);
+        }
     }
 
     private void saveServerAndRefresh() {

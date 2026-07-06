@@ -99,10 +99,11 @@ incompatible package.
 
 The terminal screen connects to `/ws/terminal` and sends the upstream protocol
 messages unchanged: `attach`, `input`, `resize`, `scroll`, and `clear-history`.
-The first Android UI renders terminal output as basic monospace text with ANSI
-escape filtering. It is enough for shell-oriented remote testing, but it is not
-yet a complete xterm-compatible renderer for full-screen TUIs such as `vim` or
-`top`.
+The first Android UI renders terminal output as monospace text with basic ANSI
+SGR color support. The terminal view stays bottom-aligned when output is short,
+auto-scrolls as data arrives, and adjusts its bottom inset when the soft keyboard
+opens. It is enough for shell-oriented remote testing, but it is not yet a
+complete xterm-compatible renderer for full-screen TUIs such as `vim` or `top`.
 
 The terminal toolbar and shortcut row include tmux prefix helpers. The app sends
 the same control bytes a keyboard would send, for example `Ctrl+B`, `Ctrl+B d`,
