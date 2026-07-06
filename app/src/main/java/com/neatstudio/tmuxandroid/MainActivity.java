@@ -301,8 +301,9 @@ public final class MainActivity extends Activity {
         LinearLayout content = pageContent();
         content.addView(infoBlock(
                 "Installed",
-                "Version " + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")\n"
-                        + "Update source:\n" + prefs.getString("update_url", BuildConfig.DEFAULT_UPDATE_URL)
+                appIdentityText() + "\n"
+                        + "Update source: " + updateSourceHost() + "\n"
+                        + prefs.getString("update_url", BuildConfig.DEFAULT_UPDATE_URL)
         ));
         content.addView(sectionTitle("Update"));
         content.addView(actionPanel(
@@ -351,7 +352,7 @@ public final class MainActivity extends Activity {
         content.addView(infoBlock(
                 "tmux-browser Android",
                 "Native Android client for the remote tmux-browser API.\n"
-                        + "Version " + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")\n"
+                        + appIdentityText() + "\n"
                         + "Package " + getPackageName()
         ));
         content.addView(infoBlock(
@@ -362,7 +363,8 @@ public final class MainActivity extends Activity {
         ));
         content.addView(infoBlock(
                 "Update policy",
-                "Selected source:\n" + prefs.getString("update_url", BuildConfig.DEFAULT_UPDATE_URL) + "\n"
+                "Selected source: " + updateSourceHost() + "\n"
+                        + prefs.getString("update_url", BuildConfig.DEFAULT_UPDATE_URL) + "\n"
                         + "The app checks only this source. APK downloads are cached by version and reused after Android install permission is granted."
         ));
         content.addView(actionPanel(
@@ -1208,11 +1210,7 @@ public final class MainActivity extends Activity {
 
     private void showPermissionsAndUpdateStatus() {
         StringBuilder text = new StringBuilder();
-        text.append("Installed app: ")
-                .append(BuildConfig.VERSION_NAME)
-                .append(" (")
-                .append(BuildConfig.VERSION_CODE)
-                .append(")\n");
+        text.append("Installed app: ").append(appIdentityText()).append('\n');
         text.append("Server: ").append(getServerUrl()).append('\n');
         text.append('\n');
         text.append("Manual APK download:\n");
@@ -1222,7 +1220,9 @@ public final class MainActivity extends Activity {
         text.append('\n');
         text.append("In-app update:\n");
         text.append("Tap Check now on the Update page. The app checks only the selected source, downloads one APK per version, verifies SHA-256, then opens Android's installer.\n");
-        text.append("Selected manifest:\n")
+        text.append("Selected manifest: ")
+                .append(updateSourceHost())
+                .append('\n')
                 .append(prefs.getString("update_url", BuildConfig.DEFAULT_UPDATE_URL))
                 .append('\n');
         text.append("Available sources:\n");
@@ -1736,6 +1736,22 @@ public final class MainActivity extends Activity {
 
     private String getServerUrl() {
         return prefs.getString("server_url", BuildConfig.DEFAULT_SERVER_URL);
+    }
+
+    private String appIdentityText() {
+        return "Version " + BuildConfig.VERSION_NAME
+                + " (" + BuildConfig.VERSION_CODE + ", "
+                + (BuildConfig.DEBUG ? "debug" : "release")
+                + ")";
+    }
+
+    private String updateSourceHost() {
+        String url = prefs.getString("update_url", BuildConfig.DEFAULT_UPDATE_URL);
+        if (url == null || url.trim().isEmpty()) {
+            url = BuildConfig.DEFAULT_UPDATE_URL;
+        }
+        String host = Uri.parse(url).getHost();
+        return host == null || host.isEmpty() ? "custom" : host;
     }
 
     private String normalizeServerUrl(String raw) {

@@ -26,8 +26,8 @@ APIs directly:
 - automatic update checks against the selected release manifest
 - one-download-per-version APK cache, SHA-256 verification, and installer
   handoff
-- native Update and About pages for version, protocol, permission, and release
-  information
+- native Update and About pages for version/build type, protocol, permission,
+  selected update source, and release information
 
 ## Server URL
 
@@ -185,5 +185,5 @@ In the app:
   state, and a `Check update` button.
 - Open the `Update` page and tap `App settings` for Android's full per-app
   permission/settings screen.
-- Open the `About` page to see the app version, package name, API/protocol
-  summary, selected update source, and update policy.
+- Open the `About` page to see the app version/build type, package name,
+  API/protocol summary, selected update source, and update policy.
