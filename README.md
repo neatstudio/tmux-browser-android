@@ -182,5 +182,7 @@ In the app:
 - Open the `Update` page and tap `Details` to see the installed version,
   selected update source, APK/Release resolver behavior, install permission
   state, and a `Check update` button.
+- Open the `Update` page and tap `App settings` for Android's full per-app
+  permission/settings screen.
 - Open the `About` page to see the app version, package name, API/protocol
   summary, selected update source, and update policy.

@@ -302,6 +302,7 @@ public final class MainActivity extends Activity {
         content.addView(actionPanel(
                 actionButton("Install permission", view -> openInstallPermissionSettings()),
                 actionButton("Notifications", view -> requestNotificationPermission()),
+                actionButton("App settings", view -> openAppSettings()),
                 actionButton("Details", view -> showPermissionsAndUpdateStatus())
         ));
         scroll.addView(content);
@@ -1225,6 +1226,7 @@ public final class MainActivity extends Activity {
             text.append("Notifications: no runtime permission required.\n");
         }
         text.append("SMS: not requested. This tmux client does not need SMS permission.");
+        text.append("\nOpen App settings for Android's full per-app permission and storage/network controls.");
         return text.toString();
     }
 
@@ -1306,6 +1308,14 @@ public final class MainActivity extends Activity {
             return;
         }
         requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 3001);
+    }
+
+    private void openAppSettings() {
+        Intent intent = new Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.parse("package:" + getPackageName())
+        );
+        startActivity(intent);
     }
 
     private void showImagePreview(String path, String basePath) {

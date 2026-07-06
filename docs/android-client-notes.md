@@ -89,8 +89,8 @@ Implemented now:
 - one-download-per-version APK cache, SHA-256 verification, and installer
   handoff
 - permission/about surfaces for unknown-app install status, notification status,
-  app version, package name, selected update source, and HTTP/WebSocket
-  API/protocol summary
+  app settings, app version, package name, selected update source, and
+  HTTP/WebSocket API/protocol summary
 
 ## Update And Release Policy
 
