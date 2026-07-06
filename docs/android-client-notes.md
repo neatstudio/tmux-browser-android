@@ -79,7 +79,7 @@ Implemented now:
 - bottom shortcut bar for `Esc`, `Tab`, `Ctrl+C`, `Ctrl+V`, arrows, page keys,
   tmux prefix actions, and paste
 - shortcut delivery through the terminal WebSocket `input` message
-- native action center for health, server status, timeline, preferences, kanban
+- native Tools page for health, server status, timeline, preferences, kanban
   projects, group messages, hook events, image file/URL upload, image preview
   metadata, and native image preview display
 - GitHub Actions APK build

@@ -228,7 +228,8 @@ public final class MainActivity extends Activity {
         content.addView(actionPanel(
                 actionButton("Health", view -> showRaw("Health", () -> api.health())),
                 actionButton("Probe Tailscale", view -> probeServerProfiles()),
-                actionButton("Status", view -> showRaw("Server status", () -> api.serverStatus()))
+                actionButton("Status", view -> showRaw("Server status", () -> api.serverStatus())),
+                actionButton("Preferences", view -> showRaw("Preferences", () -> api.preferences()))
         ));
         content.addView(sectionTitle("Sessions"));
         content.addView(actionPanel(
@@ -240,9 +241,11 @@ public final class MainActivity extends Activity {
         content.addView(actionPanel(
                 actionButton("Projects", view -> showRaw("Kanban projects", () -> api.kanbanProjects())),
                 actionButton("New project", view -> promptCreateKanbanProject()),
-                actionButton("Messages", view -> promptGroupMessages())
+                actionButton("Delete project", view -> promptDeleteKanbanProject()),
+                actionButton("Remove session", view -> promptRemoveKanbanSession())
         ));
         content.addView(actionPanel(
+                actionButton("Messages", view -> promptGroupMessages()),
                 actionButton("Send message", view -> promptSendGroupMessage()),
                 actionButton("Scan message", view -> promptScanGroupMessage()),
                 actionButton("Post hook", view -> promptPostHookEvent())
@@ -251,6 +254,7 @@ public final class MainActivity extends Activity {
         content.addView(actionPanel(
                 actionButton("Upload file", view -> promptUploadImageFile()),
                 actionButton("Upload URL", view -> promptUploadImageUrl()),
+                actionButton("Preview info", view -> promptImagePreviewInfo()),
                 actionButton("Preview", view -> promptOpenImagePreview())
         ));
         scroll.addView(content);
@@ -398,14 +402,36 @@ public final class MainActivity extends Activity {
         actionRow.setOrientation(LinearLayout.HORIZONTAL);
         actionRow.setGravity(Gravity.CENTER_VERTICAL);
         actionRow.setPadding(0, dp(6), 0, 0);
-        actionRow.addView(toolbarButton("New", view -> promptCreateSession()));
-        actionRow.addView(toolbarButton("Refresh", view -> refreshSessions()));
-        actionRow.addView(toolbarButton("Update", view -> updateManager.check(true)));
-        actionRow.addView(toolbarButton("More", view -> showMainActions()));
+        addContextActions(actionRow);
 
         toolbar.addView(urlRow, matchWrap());
-        toolbar.addView(actionRow, matchWrap());
+        if (actionRow.getChildCount() > 0) {
+            toolbar.addView(actionRow, matchWrap());
+        }
         return toolbar;
+    }
+
+    private void addContextActions(LinearLayout actionRow) {
+        if (PAGE_SESSIONS.equals(activeMainPage)) {
+            actionRow.addView(toolbarButton("New", view -> promptCreateSession()));
+            actionRow.addView(toolbarButton("Refresh", view -> refreshSessions()));
+            actionRow.addView(toolbarButton("Probe", view -> probeServerProfiles()));
+            return;
+        }
+        if (PAGE_TOOLS.equals(activeMainPage)) {
+            actionRow.addView(toolbarButton("Health", view -> showRaw("Health", () -> api.health())));
+            actionRow.addView(toolbarButton("Probe", view -> probeServerProfiles()));
+            return;
+        }
+        if (PAGE_UPDATE.equals(activeMainPage)) {
+            actionRow.addView(toolbarButton("Check now", view -> updateManager.check(true)));
+            actionRow.addView(toolbarButton("Source", view -> showUpdateSourcePicker()));
+            return;
+        }
+        if (PAGE_ABOUT.equals(activeMainPage)) {
+            actionRow.addView(toolbarButton("Release", view -> openExternalUrl(BuildConfig.DEFAULT_RELEASE_PAGE_URL)));
+            actionRow.addView(toolbarButton("Permissions", view -> showPermissionsAndUpdateStatus()));
+        }
     }
 
     private HorizontalScrollView createServerProfileBar() {
@@ -748,112 +774,6 @@ public final class MainActivity extends Activity {
         bar.addView(toolbarButton("Reconnect", view -> connectTerminal(sessionName)));
         bar.addView(toolbarButton("More", view -> showTerminalActions(sessionName)));
         return bar;
-    }
-
-    private void showMainActions() {
-        String[] items = {
-                "Health",
-                "Probe Tailscale APIs",
-                "Server status",
-                "Timeline",
-                "Preferences",
-                "All session details",
-                "Pane details",
-                "Kanban projects",
-                "Create kanban project",
-                "Delete kanban project",
-                "Remove kanban session",
-                "Group messages",
-                "Send group message",
-                "Scan group message",
-                "Post hook event",
-                "Upload image file",
-                "Upload image URL",
-                "Image preview info",
-                "Open image preview",
-                "Open APK download",
-                "Update source",
-                "Permissions / update status",
-                "About"
-        };
-        new AlertDialog.Builder(this)
-                .setTitle("Native API actions")
-                .setItems(items, (dialog, which) -> {
-                    switch (which) {
-                        case 0:
-                            showRaw("Health", () -> api.health());
-                            break;
-                        case 1:
-                            probeServerProfiles();
-                            break;
-                        case 2:
-                            showRaw("Server status", () -> api.serverStatus());
-                            break;
-                        case 3:
-                            showRaw("Timeline", () -> api.timeline(50));
-                            break;
-                        case 4:
-                            showRaw("Preferences", () -> api.preferences());
-                            break;
-                        case 5:
-                            showRaw("All session details", () -> api.sessionsAll());
-                            break;
-                        case 6:
-                            showRaw("Pane details", () -> api.sessionsPanes());
-                            break;
-                        case 7:
-                            showRaw("Kanban projects", () -> api.kanbanProjects());
-                            break;
-                        case 8:
-                            promptCreateKanbanProject();
-                            break;
-                        case 9:
-                            promptDeleteKanbanProject();
-                            break;
-                        case 10:
-                            promptRemoveKanbanSession();
-                            break;
-                        case 11:
-                            promptGroupMessages();
-                            break;
-                        case 12:
-                            promptSendGroupMessage();
-                            break;
-                        case 13:
-                            promptScanGroupMessage();
-                            break;
-                        case 14:
-                            promptPostHookEvent();
-                            break;
-                        case 15:
-                            promptUploadImageFile();
-                            break;
-                        case 16:
-                            promptUploadImageUrl();
-                            break;
-                        case 17:
-                            promptImagePreviewInfo();
-                            break;
-                        case 18:
-                            promptOpenImagePreview();
-                            break;
-                        case 19:
-                            openExternalUrl(BuildConfig.DEFAULT_APK_URL);
-                            break;
-                        case 20:
-                            showUpdateSourcePicker();
-                            break;
-                        case 21:
-                            showPermissionsAndUpdateStatus();
-                            break;
-                        case 22:
-                            renderAboutScreen();
-                            break;
-                        default:
-                            break;
-                    }
-                })
-                .show();
     }
 
     private void showSessionActions(String sessionName) {

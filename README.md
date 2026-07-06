@@ -17,7 +17,7 @@ APIs directly:
 - open one live terminal viewer through `/ws/terminal`
 - native `/ws/events` listener for session invalidation and hook notifications
 - selectable GitHub or Gitea update manifest source
-- native API action center for health, server status, timeline, preferences,
+- native Tools page for health, server status, timeline, preferences,
   kanban projects, group messages, hook events, image file/URL upload, image
   preview info, and native image preview display
 - mobile soft-key row for tmux-oriented input, including tmux prefix, detach,
@@ -177,10 +177,10 @@ In the app:
 - If Android sends you to the unknown-app install permission screen, return to
   the app after allowing it; the app continues installing the already downloaded
   APK without another update check or download.
-- Open `More` -> `Open APK download` to download the current public APK in a
+- Open the `Update` page and tap `APK` to download the current public APK in a
   browser.
-- Open the `Update` page or `More` -> `Permissions / update status` to see the
-  installed version, selected update source, APK URL, install permission state,
-  and a `Check update` button.
+- Open the `Update` page and tap `Details` to see the installed version,
+  selected update source, APK URL, install permission state, and a `Check
+  update` button.
 - Open the `About` page to see the app version, package name, API/protocol
   summary, and update policy.
