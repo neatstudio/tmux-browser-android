@@ -110,10 +110,10 @@ install settings before the installer can run. After the user grants that
 permission and returns to the app, the app resumes installation of the pending
 APK instead of asking the user to run update again.
 
-Only `v*` tags publish GitHub Releases. Main branch builds are for CI artifacts
-and should be used to validate grouped changes. Do not publish a new tag for
-every small UI copy or layout change; publish when there is a useful feature or
-test batch for phone-side validation.
+Only `v*` tags publish GitHub Releases. Main branch builds and manual workflow
+runs are for CI artifacts and should be used to validate grouped changes. Do not
+publish a new tag for every small UI copy or layout change; publish when there
+is a useful feature or test batch for phone-side validation.
 
 ## Native Roadmap
 

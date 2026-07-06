@@ -78,8 +78,8 @@ Create the base64 value from your release keystore:
 base64 -w 0 tmux-android-release.jks
 ```
 
-Branch builds create Actions artifacts only. Use them to verify grouped changes
-before publishing.
+Branch builds and manual workflow runs create Actions artifacts only. Use them
+to verify grouped changes before publishing.
 
 Publish a release build by pushing a `v*` tag. A tag should be reserved for a
 coherent feature/test batch, not every small UI or text change. Tag publishing
