@@ -370,7 +370,10 @@ public final class MainActivity extends Activity {
         ));
         content.addView(sectionTitle("Update"));
         content.addView(actionPanel(
-                actionButton("Check now", view -> updateManager.check(true)),
+                actionButton("Auto check", view -> updateManager.check(true)),
+                actionButton("Gitea", view -> updateManager.checkGitea(true)),
+                actionButton("GitHub", view -> updateManager.checkGithub(true)),
+                actionButton("Selected", view -> updateManager.checkSelected(true)),
                 actionButton("Source", view -> showUpdateSourcePicker()),
                 actionButton("APK", view -> updateManager.openApkDownload())
         ));
@@ -428,7 +431,7 @@ public final class MainActivity extends Activity {
                 "Update policy",
                 "Selected source: " + updateSourceHost() + "\n"
                         + prefs.getString("update_url", BuildConfig.DEFAULT_UPDATE_URL) + "\n"
-                        + "The app checks only this source. APK downloads are cached by version and reused after Android install permission is granted."
+                        + "Auto check tries Gitea first, then GitHub if Gitea cannot be reached. Manual Gitea/GitHub/Selected checks are also available. APK downloads are cached by version and reused after Android install permission is granted."
         ));
         content.addView(actionPanel(
                 actionButton("Release page", view -> updateManager.openReleasePage()),
@@ -1433,7 +1436,7 @@ public final class MainActivity extends Activity {
         text.append("Tap Release on the About page. The app resolves the page from the selected update source.\n");
         text.append('\n');
         text.append("In-app update:\n");
-        text.append("Tap Check now on the Update page. The app checks only the selected source, downloads one APK per version, verifies SHA-256, then opens Android's installer.\n");
+        text.append("Tap Auto check on the Update page to try Gitea first and GitHub only if Gitea cannot be reached. Use Gitea, GitHub, or Selected to force one source. Each source retries transient network failures before failing. The app downloads one APK per version, verifies SHA-256, then opens Android's installer.\n");
         text.append("Selected manifest: ")
                 .append(updateSourceHost())
                 .append('\n')

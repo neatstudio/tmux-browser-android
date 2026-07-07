@@ -26,7 +26,8 @@ APIs directly:
   display
 - mobile soft-key row for tmux-oriented input, including tmux prefix, detach,
   new window, previous/next window, Ctrl keys, arrows, page keys, and paste
-- automatic update checks against the selected release manifest
+- automatic update checks with Gitea first and GitHub fallback, plus manual
+  source-specific checks
 - one-download-per-version APK cache, SHA-256 verification, and installer
   handoff
 - native Update and About pages for version/build type, protocol, permission,
@@ -161,9 +162,19 @@ manifest is:
 https://github.com/neatstudio/tmux-browser-android/releases/latest/download/latest.json
 ```
 
-The app checks only the selected update source. It does not probe GitHub and
-Gitea during the same update check. Choose the source in the app's `Update`
-page, or use a custom manifest/API URL.
+The app has four update checks on the `Update` page:
+
+- `Auto check` tries Gitea first, then tries GitHub only if Gitea cannot be
+  reached.
+- `Gitea` checks only the public Gitea release API.
+- `GitHub` checks only the public GitHub manifest.
+- `Selected` checks the source chosen with `Source`, including a custom
+  manifest/API URL.
+
+Each source retries transient network failures before that source is considered
+failed. The `APK` and `Release page` buttons still resolve from the selected
+source, so they can be forced to Gitea on phones that cannot reliably reach
+GitHub.
 
 Gitea tag-specific assets are also public, for example:
 
@@ -174,8 +185,9 @@ https://gitea.neatcn.com/tmux/tmux-browser-android/releases/download/v0.1.7/tmux
 
 In the app:
 
-- Open the `Update` page to check `latest.json`, download the APK, verify
-  SHA-256, and open Android's installer.
+- Open the `Update` page and tap `Auto check` to check `latest.json`, download
+  the APK, verify SHA-256, and open Android's installer. Use `Gitea`, `GitHub`,
+  or `Selected` to force a single update source.
 - If the same version APK was already downloaded and its SHA-256 still matches,
   the app reuses that file instead of downloading it again.
 - If Android sends you to the unknown-app install permission screen, return to

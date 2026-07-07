@@ -26,6 +26,8 @@ import java.util.concurrent.Executors;
 
 final class UpdateManager {
     private static final String PREF_PENDING_INSTALL_APK = "pending_install_apk";
+    private static final int NETWORK_ATTEMPTS = 3;
+    private static final long RETRY_DELAY_MS = 1200L;
 
     interface Callback {
         void onChecking(boolean checking);
@@ -51,25 +53,77 @@ final class UpdateManager {
     }
 
     void check(boolean userInitiated) {
+        checkWithFallback(userInitiated);
+    }
+
+    void checkSelected(boolean userInitiated) {
+        startUpdateCheck(
+                userInitiated,
+                "selected source",
+                new String[]{getUpdateManifestUrl()}
+        );
+    }
+
+    void checkGitea(boolean userInitiated) {
+        startUpdateCheck(
+                userInitiated,
+                "Gitea",
+                new String[]{BuildConfig.DEFAULT_GITEA_UPDATE_URL}
+        );
+    }
+
+    void checkGithub(boolean userInitiated) {
+        startUpdateCheck(
+                userInitiated,
+                "GitHub",
+                new String[]{BuildConfig.DEFAULT_GITHUB_UPDATE_URL}
+        );
+    }
+
+    void checkWithFallback(boolean userInitiated) {
+        startUpdateCheck(
+                userInitiated,
+                "Gitea, then GitHub",
+                new String[]{BuildConfig.DEFAULT_GITEA_UPDATE_URL, BuildConfig.DEFAULT_GITHUB_UPDATE_URL}
+        );
+    }
+
+    private void startUpdateCheck(boolean userInitiated, String label, String[] manifestUrls) {
         if (checkInProgress) {
             postMessage("Update check already running");
             return;
         }
-        String manifestUrl = getUpdateManifestUrl();
         checkInProgress = true;
         callback.onChecking(true);
-        postMessage("Checking update from " + hostLabel(manifestUrl) + "...");
+        postMessage("Checking update: " + label + "...");
         executor.execute(() -> {
+            Exception lastError = null;
             try {
-                ReleaseInfo info = fetchReleaseInfo(manifestUrl);
-                if (info.versionCode <= BuildConfig.VERSION_CODE) {
-                    postMessage("Already up to date: " + BuildConfig.VERSION_NAME);
-                    return;
+                for (int index = 0; index < manifestUrls.length; index++) {
+                    String manifestUrl = manifestUrls[index];
+                    try {
+                        postMessage("Checking " + hostLabel(manifestUrl) + "...");
+                        ReleaseInfo info = fetchReleaseInfo(manifestUrl);
+                        if (info.versionCode <= BuildConfig.VERSION_CODE) {
+                            postMessage("Already up to date: " + BuildConfig.VERSION_NAME + " from " + hostLabel(manifestUrl));
+                            return;
+                        }
+                        postMessage("Update found: " + info.versionName + " from " + hostLabel(manifestUrl));
+                        activity.runOnUiThread(() -> showUpdateDialog(info));
+                        return;
+                    } catch (Exception error) {
+                        lastError = error;
+                        if (index + 1 < manifestUrls.length) {
+                            postMessage(hostLabel(manifestUrl) + " failed; trying " + hostLabel(manifestUrls[index + 1]) + "...");
+                        }
+                    }
                 }
-                postMessage("Update found: " + info.versionName);
-                activity.runOnUiThread(() -> showUpdateDialog(info));
-            } catch (Exception error) {
-                postMessage(userInitiated ? "Update check failed: " + error.getMessage() : null);
+                if (lastError != null) {
+                    throw lastError;
+                }
+                throw new IllegalStateException("No update sources configured");
+            } catch (Exception finalError) {
+                postMessage(userInitiated ? "Update check failed: " + finalError.getMessage() : null);
             } finally {
                 checkInProgress = false;
                 activity.runOnUiThread(() -> callback.onChecking(false));
@@ -177,6 +231,22 @@ final class UpdateManager {
     }
 
     private String readText(String url) throws Exception {
+        Exception lastError = null;
+        for (int attempt = 1; attempt <= NETWORK_ATTEMPTS; attempt++) {
+            try {
+                return readTextOnce(url);
+            } catch (Exception error) {
+                lastError = error;
+                if (attempt < NETWORK_ATTEMPTS) {
+                    postMessage("Retrying " + hostLabel(url) + " (" + (attempt + 1) + "/" + NETWORK_ATTEMPTS + ")...");
+                    waitBeforeRetry();
+                }
+            }
+        }
+        throw lastError == null ? new IllegalStateException("Request failed") : lastError;
+    }
+
+    private String readTextOnce(String url) throws Exception {
         HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
         connection.setConnectTimeout(12000);
         connection.setReadTimeout(12000);
@@ -238,7 +308,36 @@ final class UpdateManager {
         }
 
         postMessage("Downloading " + info.versionName + "...");
-        HttpURLConnection connection = (HttpURLConnection) new URL(info.apkUrl).openConnection();
+        File partial = new File(dir, "tmux-android-" + info.versionCode + ".apk.tmp");
+        if (partial.exists()) {
+            partial.delete();
+        }
+        if (apk.exists()) {
+            apk.delete();
+        }
+
+        Exception lastError = null;
+        for (int attempt = 1; attempt <= NETWORK_ATTEMPTS; attempt++) {
+            try {
+                downloadApkOnce(info.apkUrl, partial);
+                if (!partial.renameTo(apk)) {
+                    throw new IllegalStateException("Cannot finalize APK download");
+                }
+                return apk;
+            } catch (Exception error) {
+                lastError = error;
+                partial.delete();
+                if (attempt < NETWORK_ATTEMPTS) {
+                    postMessage("Retrying APK download (" + (attempt + 1) + "/" + NETWORK_ATTEMPTS + ")...");
+                    waitBeforeRetry();
+                }
+            }
+        }
+        throw lastError == null ? new IllegalStateException("APK download failed") : lastError;
+    }
+
+    private void downloadApkOnce(String apkUrl, File apk) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(apkUrl).openConnection();
         connection.setConnectTimeout(12000);
         connection.setReadTimeout(60000);
         try (InputStream input = new BufferedInputStream(connection.getInputStream());
@@ -251,7 +350,6 @@ final class UpdateManager {
         } finally {
             connection.disconnect();
         }
-        return apk;
     }
 
     private boolean isCachedApkValid(File apk, ReleaseInfo info) throws Exception {
@@ -365,5 +463,9 @@ final class UpdateManager {
             return;
         }
         activity.runOnUiThread(() -> callback.onMessage(message));
+    }
+
+    private void waitBeforeRetry() throws InterruptedException {
+        Thread.sleep(RETRY_DELAY_MS);
     }
 }

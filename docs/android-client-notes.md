@@ -101,11 +101,11 @@ The Android app cannot silently replace itself. It may download a newer APK and
 open Android's package installer, but the user must approve the install. On
 Android 8+, the user may also need to allow this app to install unknown apps.
 
-The app checks exactly one update source per run: the selected manifest/API URL.
-Gitea is the default public source because phones may not reach GitHub reliably.
-GitHub is available as an optional public source, but the app does not fall back
-across both providers during a normal check. This keeps update behavior
-predictable on mobile networks and avoids duplicate provider checks.
+The app provides explicit update checks for Auto, Gitea, GitHub, and Selected.
+Auto checks Gitea first because phones may not reach GitHub reliably, then tries
+GitHub only if Gitea cannot be reached. The manual Gitea, GitHub, and Selected
+buttons force one source. Transient network failures are retried against the
+current source before a source is considered failed.
 
 Downloaded APKs are cached by `versionCode`. If a cached APK exists and its
 SHA-256 matches the manifest, the app reuses it instead of downloading the same
