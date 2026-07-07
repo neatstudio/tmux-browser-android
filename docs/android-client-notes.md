@@ -87,7 +87,7 @@ Implemented now:
   preview display
 - GitHub Actions APK build
 - release manifest `latest.json`
-- selected-source update checks; GitHub and Gitea are not probed in the same
+- selected-source update checks; Gitea and GitHub are not probed in the same
   update check
 - one-download-per-version APK cache, SHA-256 verification, and installer
   handoff
@@ -102,10 +102,10 @@ open Android's package installer, but the user must approve the install. On
 Android 8+, the user may also need to allow this app to install unknown apps.
 
 The app checks exactly one update source per run: the selected manifest/API URL.
-GitHub is the default public source. Gitea is available as a public mirror, but
-the app does not fall back across both providers during a normal check. This
-keeps update behavior predictable on mobile networks and avoids duplicate
-provider checks.
+Gitea is the default public source because phones may not reach GitHub reliably.
+GitHub is available as an optional public source, but the app does not fall back
+across both providers during a normal check. This keeps update behavior
+predictable on mobile networks and avoids duplicate provider checks.
 
 Downloaded APKs are cached by `versionCode`. If a cached APK exists and its
 SHA-256 matches the manifest, the app reuses it instead of downloading the same

@@ -60,6 +60,7 @@ public final class MainActivity extends Activity {
     private static final int MAX_TERMINAL_CHARS = 40_000;
     private static final long TERMINAL_RENDER_INTERVAL_MS = 80L;
     private static final String OLD_LOCAL_DEFAULT_URL = "http://127.0.0.1:3000";
+    private static final String OLD_GITHUB_DEFAULT_UPDATE_URL = "https://github.com/neatstudio/tmux-browser-android/releases/latest/download/latest.json";
     private static final String DEFAULT_TAILSCALE_URL = "http://100.89.0.116:3000";
     private static final String PAGE_SESSIONS = "Sessions";
     private static final String PAGE_PROJECTS = "Projects";
@@ -116,6 +117,7 @@ public final class MainActivity extends Activity {
                     .putBoolean("tailscale_defaults_applied_v1", true)
                     .apply();
         }
+        migrateDefaultUpdateSourceToGitea();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             getWindow().setStatusBarColor(Color.rgb(17, 20, 24));
             getWindow().setNavigationBarColor(Color.rgb(17, 20, 24));
@@ -1438,8 +1440,8 @@ public final class MainActivity extends Activity {
                 .append(prefs.getString("update_url", BuildConfig.DEFAULT_UPDATE_URL))
                 .append('\n');
         text.append("Available sources:\n");
-        text.append("GitHub: ").append(BuildConfig.DEFAULT_UPDATE_URL).append('\n');
-        text.append("Gitea: ").append(BuildConfig.DEFAULT_GITEA_UPDATE_URL).append('\n');
+        text.append("Gitea default: ").append(BuildConfig.DEFAULT_GITEA_UPDATE_URL).append('\n');
+        text.append("GitHub optional: ").append(BuildConfig.DEFAULT_GITHUB_UPDATE_URL).append('\n');
         text.append('\n');
         text.append(permissionSummary());
 
@@ -1476,17 +1478,17 @@ public final class MainActivity extends Activity {
 
     private void showUpdateSourcePicker() {
         String[] items = {
-                "GitHub: " + BuildConfig.DEFAULT_UPDATE_URL,
-                "Gitea: " + BuildConfig.DEFAULT_GITEA_UPDATE_URL,
+                "Gitea default: " + BuildConfig.DEFAULT_GITEA_UPDATE_URL,
+                "GitHub optional: " + BuildConfig.DEFAULT_GITHUB_UPDATE_URL,
                 "Custom URL"
         };
         new AlertDialog.Builder(this)
                 .setTitle("Update source")
                 .setItems(items, (dialog, which) -> {
                     if (which == 0) {
-                        setUpdateUrl(BuildConfig.DEFAULT_UPDATE_URL);
-                    } else if (which == 1) {
                         setUpdateUrl(BuildConfig.DEFAULT_GITEA_UPDATE_URL);
+                    } else if (which == 1) {
+                        setUpdateUrl(BuildConfig.DEFAULT_GITHUB_UPDATE_URL);
                     } else {
                         promptText("Custom update manifest", "https://.../latest.json", prefs.getString("update_url", BuildConfig.DEFAULT_UPDATE_URL), this::setUpdateUrl);
                     }
@@ -1501,6 +1503,15 @@ public final class MainActivity extends Activity {
             renderUpdateScreen();
         } else if (PAGE_ABOUT.equals(activeMainPage)) {
             renderAboutScreen();
+        }
+    }
+
+    private void migrateDefaultUpdateSourceToGitea() {
+        String current = prefs.getString("update_url", "");
+        if (current == null || current.trim().isEmpty() || OLD_GITHUB_DEFAULT_UPDATE_URL.equals(current.trim())) {
+            prefs.edit()
+                    .putString("update_url", BuildConfig.DEFAULT_GITEA_UPDATE_URL)
+                    .apply();
         }
     }
 

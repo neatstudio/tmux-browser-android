@@ -19,7 +19,8 @@ APIs directly:
   and kill session through HTTP API
 - open one live terminal viewer through `/ws/terminal`
 - native `/ws/events` listener for session invalidation and hook notifications
-- selectable GitHub or Gitea update manifest source
+- selectable Gitea or GitHub update source, defaulting to Gitea for mobile
+  reachability
 - native Tools page for health, server status, timeline, preferences, hook
   events, image file/URL upload, image preview info, and native image preview
   display
@@ -93,10 +94,10 @@ https://github.com/neatstudio/tmux-browser-android/releases/latest/download/tmux
 https://github.com/neatstudio/tmux-browser-android/releases/latest/download/latest.json
 ```
 
-Those GitHub links are the primary public install/update channel. Gitea releases
-are mirrored as a second public source. This Gitea instance does not support the
-GitHub-style `/releases/latest/download/...` URL, so the app uses the Gitea
-Release API as the stable Gitea update entrypoint.
+Gitea is the app's default install/update channel because phones may not be able
+to reach GitHub reliably. GitHub remains an optional public source. This Gitea
+instance does not support the GitHub-style `/releases/latest/download/...` URL,
+so the app uses the Gitea Release API as the stable Gitea update entrypoint.
 
 Plain branch builds only create Actions artifacts; they are useful for CI
 verification, but releases are the stable download/update channel.
@@ -146,27 +147,23 @@ release manifest automatically, downloads the newer APK, verifies its SHA-256,
 then opens Android's package installer. The user still has to approve the
 install, and Android 8+ may require allowing this app to install unknown apps.
 
-The default update manifest is:
+The default update source is the Gitea Release API:
+
+```text
+https://gitea.neatcn.com/api/v1/repos/tmux/tmux-browser-android/releases/latest
+```
+
+The default source resolves `latest.json` and `tmux-android.apk` from Gitea
+release assets, so APK downloads do not require GitHub. The optional GitHub
+manifest is:
 
 ```text
 https://github.com/neatstudio/tmux-browser-android/releases/latest/download/latest.json
 ```
 
-The public manual APK download is:
-
-```text
-https://github.com/neatstudio/tmux-browser-android/releases/latest/download/tmux-android.apk
-```
-
 The app checks only the selected update source. It does not probe GitHub and
 Gitea during the same update check. Choose the source in the app's `Update`
 page, or use a custom manifest/API URL.
-
-The built-in Gitea API endpoint is:
-
-```text
-https://gitea.neatcn.com/api/v1/repos/tmux/tmux-browser-android/releases/latest
-```
 
 Gitea tag-specific assets are also public, for example:
 
