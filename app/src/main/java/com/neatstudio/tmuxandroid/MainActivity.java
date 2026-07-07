@@ -26,6 +26,7 @@ import android.text.style.BackgroundColorSpan;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
@@ -58,6 +59,10 @@ public final class MainActivity extends Activity {
     private static final int TERMINAL_COLS = 96;
     private static final int TERMINAL_ROWS = 32;
     private static final int MAX_TERMINAL_CHARS = 40_000;
+    private static final int STATUS_NORMAL = 0;
+    private static final int STATUS_BUSY = 1;
+    private static final int STATUS_SUCCESS = 2;
+    private static final int STATUS_ERROR = 3;
     private static final long TERMINAL_RENDER_INTERVAL_MS = 80L;
     private static final String OLD_LOCAL_DEFAULT_URL = "http://127.0.0.1:3000";
     private static final String OLD_GITHUB_DEFAULT_UPDATE_URL = "https://github.com/neatstudio/tmux-browser-android/releases/latest/download/latest.json";
@@ -156,7 +161,6 @@ public final class MainActivity extends Activity {
         statusText.setTextSize(12);
         statusText.setGravity(Gravity.CENTER_VERTICAL);
         statusText.setPadding(dp(10), 0, dp(10), 0);
-        statusText.setBackground(rounded(Color.rgb(22, 27, 34), 0, Color.TRANSPARENT, 0));
         statusText.setSingleLine(true);
         setStatus("Ready");
         applySystemBarInsets(root);
@@ -1811,6 +1815,7 @@ public final class MainActivity extends Activity {
         TerminalSocketClient socket = terminalSocket;
         if (socket != null && !socket.isClosed() && terminalConnected) {
             socket.sendInput(data);
+            setStatus("Sent input");
             return;
         }
         if (socket != null && !socket.isClosed()) {
@@ -1823,6 +1828,7 @@ public final class MainActivity extends Activity {
                 for (int i = 0; i < data.length(); i += 200) {
                     api.sendInput(activeSessionName, data.substring(i, Math.min(i + 200, data.length())));
                 }
+                runOnUiThread(() -> setStatus("Sent input"));
             } catch (Exception error) {
                 runOnUiThread(() -> showMessage("Input failed: " + error.getMessage()));
             }
@@ -1841,15 +1847,19 @@ public final class MainActivity extends Activity {
     private void pasteClipboard() {
         ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
         if (clipboard == null || !clipboard.hasPrimaryClip()) {
+            showMessage("Clipboard is empty");
             return;
         }
         ClipData clip = clipboard.getPrimaryClip();
         if (clip == null || clip.getItemCount() == 0) {
+            showMessage("Clipboard is empty");
             return;
         }
         CharSequence text = clip.getItemAt(0).coerceToText(this);
         if (text != null && text.length() > 0) {
             sendTerminalInput(text.toString());
+        } else {
+            showMessage("Clipboard is empty");
         }
     }
 
@@ -2081,7 +2091,20 @@ public final class MainActivity extends Activity {
         button.setPadding(dp(10), 0, dp(10), 0);
         button.setBackground(buttonBackground());
         button.setGravity(Gravity.CENTER);
-        button.setOnClickListener(listener);
+        button.setHapticFeedbackEnabled(true);
+        button.setOnClickListener(view -> {
+            view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+            view.animate().cancel();
+            view.setScaleX(0.96f);
+            view.setScaleY(0.96f);
+            view.animate()
+                    .scaleX(1f)
+                    .scaleY(1f)
+                    .setDuration(120L)
+                    .start();
+            setStatus(label);
+            listener.onClick(view);
+        });
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 dp(42)
@@ -2102,6 +2125,7 @@ public final class MainActivity extends Activity {
 
     private StateListDrawable buttonBackground() {
         StateListDrawable states = new StateListDrawable();
+        states.addState(new int[]{-android.R.attr.state_enabled}, rounded(Color.rgb(24, 30, 37), 8, Color.rgb(35, 42, 50), 1));
         states.addState(new int[]{android.R.attr.state_pressed}, rounded(Color.rgb(64, 78, 94), 8, Color.rgb(91, 108, 128), 1));
         states.addState(new int[]{android.R.attr.state_focused}, rounded(Color.rgb(48, 61, 76), 8, Color.rgb(98, 128, 164), 1));
         states.addState(new int[]{}, rounded(Color.rgb(34, 43, 53), 8, Color.rgb(55, 66, 80), 1));
@@ -2156,14 +2180,85 @@ public final class MainActivity extends Activity {
     }
 
     private void showMessage(String message) {
+        if (message == null || message.trim().isEmpty()) {
+            return;
+        }
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
         setStatus(message);
     }
 
     private void setStatus(String message) {
+        setStatus(message, inferStatusTone(message));
+    }
+
+    private void setStatus(String message, int tone) {
         if (statusText != null) {
-            statusText.setText(message);
+            String value = message == null || message.trim().isEmpty() ? "Ready" : message.trim();
+            statusText.setText(value);
+            int bg = Color.rgb(22, 27, 34);
+            int stroke = Color.TRANSPARENT;
+            int text = Color.rgb(210, 215, 224);
+            if (tone == STATUS_BUSY) {
+                bg = Color.rgb(20, 44, 68);
+                stroke = Color.rgb(44, 96, 142);
+                text = Color.rgb(220, 238, 255);
+            } else if (tone == STATUS_SUCCESS) {
+                bg = Color.rgb(20, 56, 40);
+                stroke = Color.rgb(42, 118, 78);
+                text = Color.rgb(218, 245, 228);
+            } else if (tone == STATUS_ERROR) {
+                bg = Color.rgb(72, 28, 31);
+                stroke = Color.rgb(154, 66, 72);
+                text = Color.rgb(255, 226, 226);
+            }
+            statusText.setTextColor(text);
+            statusText.setBackground(rounded(bg, 0, stroke, tone == STATUS_NORMAL ? 0 : 1));
         }
+    }
+
+    private int inferStatusTone(String message) {
+        if (message == null) {
+            return STATUS_NORMAL;
+        }
+        String value = message.toLowerCase(java.util.Locale.ROOT);
+        if (value.contains("failed")
+                || value.contains("error")
+                || value.contains("invalid")
+                || value.contains("cannot")
+                || value.contains("mismatch")
+                || value.contains("disconnected")
+                || value.contains("empty")
+                || value.contains("no package")
+                || value.contains("no app")) {
+            return STATUS_ERROR;
+        }
+        if (value.contains("loading")
+                || value.contains("checking")
+                || value.contains("connecting")
+                || value.contains("probing")
+                || value.contains("downloading")
+                || value.contains("preparing")
+                || value.contains("verifying")
+                || value.contains("retrying")
+                || value.contains("queued")
+                || value.contains("resolving")) {
+            return STATUS_BUSY;
+        }
+        if (value.contains("done")
+                || value.contains("loaded")
+                || value.contains("connected")
+                || value.contains("created")
+                || value.contains("killed")
+                || value.contains("opened")
+                || value.contains("sent")
+                || value.contains("selected")
+                || value.contains("saved")
+                || value.contains("using downloaded")
+                || value.contains("update found")
+                || value.contains("already up to date")) {
+            return STATUS_SUCCESS;
+        }
+        return STATUS_NORMAL;
     }
 
     private int dp(int value) {
