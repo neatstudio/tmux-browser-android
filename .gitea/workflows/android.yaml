@@ -1,4 +1,4 @@
-name: Gitea Android APK
+name: Gitea Android Compile Check
 
 on: [push]
 
@@ -6,7 +6,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Build APK
+      - name: Compile Android APK
         env:
           CLONE_TOKEN: ${{ secrets.TMUX_GITEA_TOKEN }}
         run: |
@@ -62,6 +62,8 @@ jobs:
 
           mkdir -p release
           APK_PATH="$(find app/build/outputs/apk -name '*.apk' | sort | tail -n 1)"
-          cp "${APK_PATH}" release/tmux-android-gitea.apk
-          ls -lh release/tmux-android-gitea.apk
-          sha256sum release/tmux-android-gitea.apk
+          cp "${APK_PATH}" release/tmux-android-gitea-compile-check.apk
+          ls -lh release/tmux-android-gitea-compile-check.apk
+          sha256sum release/tmux-android-gitea-compile-check.apk
+          echo "Gitea-built APK is a compile check only."
+          echo "Do not publish it as a release asset; release APKs are GitHub-built and mirrored byte-for-byte to Gitea."

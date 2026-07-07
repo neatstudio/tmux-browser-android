@@ -100,6 +100,15 @@ to reach GitHub reliably. GitHub remains an optional public source. This Gitea
 instance does not support the GitHub-style `/releases/latest/download/...` URL,
 so the app uses the Gitea Release API as the stable Gitea update entrypoint.
 
+Release APKs must be identical on GitHub and Gitea. The canonical APK is the
+GitHub Release asset built by `.github/workflows/android.yml`; publish to Gitea
+by mirroring that same `tmux-android.apk` byte-for-byte and uploading a
+Gitea-specific `latest.json` whose `apkUrl` points at the Gitea asset but whose
+`versionCode`, `versionName`, and `sha256` match the GitHub manifest. Do not use
+a separately built Gitea APK as a release asset unless it is proven to have the
+same SHA-256 as the GitHub APK. This keeps Android signatures and update
+compatibility identical no matter which platform the phone can reach.
+
 Plain branch builds only create Actions artifacts; they are useful for CI
 verification, but releases are the stable download/update channel.
 

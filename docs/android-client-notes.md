@@ -87,8 +87,8 @@ Implemented now:
   preview display
 - GitHub Actions APK build
 - release manifest `latest.json`
-- selected-source update checks; Gitea and GitHub are not probed in the same
-  update check
+- Auto/Gitea/GitHub/Selected update checks, with Auto falling back from Gitea
+  to GitHub
 - one-download-per-version APK cache, SHA-256 verification, and installer
   handoff
 - permission/about surfaces for unknown-app install status, notification status,
@@ -118,6 +118,14 @@ Only `v*` tags publish GitHub Releases. Main branch builds and manual workflow
 runs are for CI artifacts and should be used to validate grouped changes. Do not
 publish a new tag for every small UI copy or layout change; publish when there
 is a useful feature or test batch for phone-side validation.
+
+Release APKs must be identical across the public GitHub and Gitea download
+channels. Treat the GitHub Release APK as the canonical build artifact, then
+mirror that same APK byte-for-byte to the matching Gitea Release. The Gitea
+`latest.json` should point to the Gitea APK URL, but it must keep the same
+`versionCode`, `versionName`, and `sha256` as the GitHub manifest. A Gitea-built
+APK is only a compile check unless its SHA-256 exactly matches the GitHub
+release APK.
 
 ## Native Roadmap
 
