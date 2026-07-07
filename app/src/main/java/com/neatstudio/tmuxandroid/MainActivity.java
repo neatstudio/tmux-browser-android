@@ -19,12 +19,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
-import android.text.SpannableStringBuilder;
-import android.text.Spanned;
 import android.text.InputType;
-import android.text.style.BackgroundColorSpan;
-import android.text.style.ForegroundColorSpan;
-import android.text.style.StyleSpan;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.View;
@@ -62,7 +57,6 @@ public final class MainActivity extends Activity {
     private static final int MAX_TERMINAL_COLS = 140;
     private static final int MIN_TERMINAL_ROWS = 8;
     private static final int MAX_TERMINAL_ROWS = 80;
-    private static final int MAX_TERMINAL_CHARS = 40_000;
     private static final int STATUS_NORMAL = 0;
     private static final int STATUS_BUSY = 1;
     private static final int STATUS_SUCCESS = 2;
@@ -102,7 +96,7 @@ public final class MainActivity extends Activity {
     private String activeSessionName;
     private String activeMainPage = PAGE_SESSIONS;
     private String pendingImageUploadSession;
-    private final StringBuilder terminalBuffer = new StringBuilder();
+    private TerminalScreenBuffer terminalScreen = new TerminalScreenBuffer(DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS);
     private final StringBuilder queuedTerminalInput = new StringBuilder();
     private boolean terminalConnected;
     private boolean terminalRenderPending;
@@ -971,7 +965,7 @@ public final class MainActivity extends Activity {
 
     private void openTerminal(String sessionName) {
         activeSessionName = sessionName;
-        terminalBuffer.setLength(0);
+        terminalScreen = new TerminalScreenBuffer(DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS);
         queuedTerminalInput.setLength(0);
         terminalConnected = false;
         terminalRenderPending = false;
@@ -1132,7 +1126,7 @@ public final class MainActivity extends Activity {
                 .setItems(items, (dialog, which) -> {
                     switch (which) {
                         case 0:
-                            terminalBuffer.setLength(0);
+                            terminalScreen.clear();
                             terminalText.setText("");
                             if (terminalSocket != null) {
                                 terminalSocket.clearHistory();
@@ -1829,13 +1823,15 @@ public final class MainActivity extends Activity {
         if (lineHeight <= 0) {
             lineHeight = dp(16);
         }
-        int cols = clamp((int) Math.floor((width - horizontalPadding) / charWidth), MIN_TERMINAL_COLS, MAX_TERMINAL_COLS);
+        int cols = clamp((int) Math.floor((width - horizontalPadding) / charWidth) - 1, MIN_TERMINAL_COLS, MAX_TERMINAL_COLS);
         int rows = clamp((height - verticalPadding) / lineHeight, MIN_TERMINAL_ROWS, MAX_TERMINAL_ROWS);
         if (cols == terminalCols && rows == terminalRows && !forceSend) {
             return;
         }
         terminalCols = cols;
         terminalRows = rows;
+        terminalScreen.resize(cols, rows);
+        scheduleTerminalRender();
         TerminalSocketClient socket = terminalSocket;
         if (socket != null && !socket.isClosed() && terminalConnected) {
             socket.resize(cols, rows);
@@ -1911,10 +1907,7 @@ public final class MainActivity extends Activity {
     }
 
     private void appendTerminal(String data) {
-        terminalBuffer.append(data);
-        if (terminalBuffer.length() > MAX_TERMINAL_CHARS) {
-            terminalBuffer.delete(0, terminalBuffer.length() - MAX_TERMINAL_CHARS);
-        }
+        terminalScreen.write(data);
         scheduleTerminalRender();
     }
 
@@ -1936,192 +1929,8 @@ public final class MainActivity extends Activity {
             return;
         }
         lastTerminalRenderMs = System.currentTimeMillis();
-        terminalText.setText(renderAnsiForTerminal(terminalBuffer.toString()));
+        terminalText.setText(terminalScreen.render());
         terminalScroll.post(() -> terminalScroll.fullScroll(View.FOCUS_DOWN));
-    }
-
-    private CharSequence renderAnsiForTerminal(String text) {
-        SpannableStringBuilder output = new SpannableStringBuilder();
-        int fg = Color.rgb(230, 235, 242);
-        int bg = Color.TRANSPARENT;
-        boolean bold = false;
-        int index = 0;
-        while (index < text.length()) {
-            char item = text.charAt(index);
-            if (item == '\r') {
-                deleteCurrentTerminalLine(output);
-                index++;
-                continue;
-            }
-            if (item == '\b') {
-                if (output.length() > 0 && output.charAt(output.length() - 1) != '\n') {
-                    output.delete(output.length() - 1, output.length());
-                }
-                index++;
-                continue;
-            }
-            if (item == '\u001b' && index + 1 < text.length() && text.charAt(index + 1) == '[') {
-                int end = findAnsiEnd(text, index + 2);
-                if (end == -1) {
-                    break;
-                }
-                char command = text.charAt(end);
-                if (command == 'm') {
-                    int[] state = applySgr(text.substring(index + 2, end), fg, bg, bold);
-                    fg = state[0];
-                    bg = state[1];
-                    bold = state[2] == 1;
-                } else if (command == 'K') {
-                    String params = text.substring(index + 2, end);
-                    if (params.startsWith("2")) {
-                        deleteCurrentTerminalLine(output);
-                    }
-                } else if (command == 'J') {
-                    String params = text.substring(index + 2, end);
-                    if (params.startsWith("2") || params.startsWith("3")) {
-                        output.clear();
-                    }
-                }
-                index = end + 1;
-                continue;
-            }
-            if (item == '\u001b') {
-                int skipped = skipNonCsiEscape(text, index);
-                if (skipped > index) {
-                    index = skipped;
-                    continue;
-                }
-            }
-
-            int runStart = index;
-            while (index < text.length()) {
-                char runItem = text.charAt(index);
-                if (runItem == '\r' || runItem == '\b' || runItem == '\u001b') {
-                    break;
-                }
-                index++;
-            }
-            appendTerminalRun(output, text.substring(runStart, index), fg, bg, bold);
-        }
-        return output;
-    }
-
-    private void deleteCurrentTerminalLine(SpannableStringBuilder output) {
-        int start = output.length();
-        while (start > 0 && output.charAt(start - 1) != '\n') {
-            start--;
-        }
-        if (start < output.length()) {
-            output.delete(start, output.length());
-        }
-    }
-
-    private int skipNonCsiEscape(String text, int index) {
-        if (index + 1 >= text.length()) {
-            return index + 1;
-        }
-        char next = text.charAt(index + 1);
-        if (next == ']' || next == 'P' || next == '^' || next == '_') {
-            int cursor = index + 2;
-            while (cursor < text.length()) {
-                char item = text.charAt(cursor);
-                if (item == '\u0007') {
-                    return cursor + 1;
-                }
-                if (item == '\u001b' && cursor + 1 < text.length() && text.charAt(cursor + 1) == '\\') {
-                    return cursor + 2;
-                }
-                cursor++;
-            }
-            return text.length();
-        }
-        if (next == '(' || next == ')' || next == '*' || next == '+' || next == '-' || next == '.') {
-            return Math.min(index + 3, text.length());
-        }
-        return Math.min(index + 2, text.length());
-    }
-
-    private void appendTerminalRun(SpannableStringBuilder output, String text, int fg, int bg, boolean bold) {
-        if (text.isEmpty()) {
-            return;
-        }
-        int start = output.length();
-        output.append(text);
-        int finish = output.length();
-        output.setSpan(new ForegroundColorSpan(fg), start, finish, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        if (bg != Color.TRANSPARENT) {
-            output.setSpan(new BackgroundColorSpan(bg), start, finish, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        }
-        if (bold) {
-            output.setSpan(new StyleSpan(Typeface.BOLD), start, finish, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        }
-    }
-
-    private int findAnsiEnd(String text, int start) {
-        for (int index = start; index < text.length(); index++) {
-            char item = text.charAt(index);
-            if (item >= '@' && item <= '~') {
-                return index;
-            }
-        }
-        return -1;
-    }
-
-    private int[] applySgr(String params, int fg, int bg, boolean bold) {
-        if (params.isEmpty()) {
-            params = "0";
-        }
-        String[] parts = params.split(";");
-        for (String part : parts) {
-            int value;
-            try {
-                value = part.isEmpty() ? 0 : Integer.parseInt(part);
-            } catch (NumberFormatException ignored) {
-                continue;
-            }
-            if (value == 0) {
-                fg = Color.rgb(230, 235, 242);
-                bg = Color.TRANSPARENT;
-                bold = false;
-            } else if (value == 1) {
-                bold = true;
-            } else if (value == 22) {
-                bold = false;
-            } else if (value == 39) {
-                fg = Color.rgb(230, 235, 242);
-            } else if (value == 49) {
-                bg = Color.TRANSPARENT;
-            } else if ((value >= 30 && value <= 37) || (value >= 90 && value <= 97)) {
-                fg = ansiColor(value, false);
-            } else if ((value >= 40 && value <= 47) || (value >= 100 && value <= 107)) {
-                bg = ansiColor(value, true);
-            }
-        }
-        return new int[]{fg, bg, bold ? 1 : 0};
-    }
-
-    private int ansiColor(int code, boolean background) {
-        int base = background ? (code >= 100 ? code - 100 : code - 40) : (code >= 90 ? code - 90 : code - 30);
-        boolean bright = code >= 90;
-        switch (base) {
-            case 0:
-                return bright ? Color.rgb(80, 88, 100) : Color.rgb(33, 38, 45);
-            case 1:
-                return bright ? Color.rgb(255, 123, 114) : Color.rgb(248, 81, 73);
-            case 2:
-                return bright ? Color.rgb(86, 211, 100) : Color.rgb(63, 185, 80);
-            case 3:
-                return bright ? Color.rgb(234, 179, 8) : Color.rgb(210, 153, 34);
-            case 4:
-                return bright ? Color.rgb(121, 192, 255) : Color.rgb(88, 166, 255);
-            case 5:
-                return bright ? Color.rgb(210, 168, 255) : Color.rgb(188, 140, 255);
-            case 6:
-                return bright ? Color.rgb(86, 211, 219) : Color.rgb(57, 197, 187);
-            case 7:
-            default:
-                return bright ? Color.rgb(240, 246, 252) : Color.rgb(201, 209, 217);
-        }
     }
 
     private void saveServerAndRefresh() {
