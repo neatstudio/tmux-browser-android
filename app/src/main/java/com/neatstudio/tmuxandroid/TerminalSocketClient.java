@@ -12,6 +12,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Arrays;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 
 import javax.net.ssl.SSLSocketFactory;
 
@@ -25,6 +28,8 @@ final class TerminalSocketClient {
 
     private final Object writeLock = new Object();
     private final Listener listener;
+    private final ExecutorService writeExecutor = Executors.newSingleThreadExecutor(runnable ->
+            new Thread(runnable, "terminal-ws-write"));
     private Socket socket;
     private BufferedInputStream input;
     private BufferedOutputStream output;
@@ -42,32 +47,34 @@ final class TerminalSocketClient {
     }
 
     void sendInput(String data) {
-        sendMessage("input", "data", data);
+        sendMessageAsync("input", "data", data);
     }
 
     void resize(int cols, int rows) {
-        sendMessage("resize", "cols", cols, "rows", rows);
+        sendMessageAsync("resize", "cols", cols, "rows", rows);
     }
 
     void scroll(int lines) {
-        sendMessage("scroll", "lines", lines);
+        sendMessageAsync("scroll", "lines", lines);
     }
 
     void clearHistory() {
-        sendMessage("clear-history");
+        sendMessageAsync("clear-history");
     }
 
     void close() {
         closed = true;
         try {
-            sendFrame(8, new byte[0]);
-        } catch (Exception ignored) {
-        }
-        try {
-            if (socket != null) {
-                socket.close();
-            }
-        } catch (Exception ignored) {
+            writeExecutor.execute(() -> {
+                try {
+                    sendFrame(8, new byte[0]);
+                } catch (Exception ignored) {
+                }
+                closeSocketQuietly();
+            });
+            writeExecutor.shutdown();
+        } catch (RejectedExecutionException ignored) {
+            closeSocketQuietly();
         }
     }
 
@@ -82,7 +89,7 @@ final class TerminalSocketClient {
             input = new BufferedInputStream(socket.getInputStream());
             output = new BufferedOutputStream(socket.getOutputStream());
             handshake(uri);
-            sendMessage(
+            sendMessageSync(
                     "attach",
                     "tabId", "android-" + System.currentTimeMillis(),
                     "sessionName", sessionName,
@@ -98,12 +105,8 @@ final class TerminalSocketClient {
         } finally {
             closed = true;
             listener.onClosed();
-            try {
-                if (socket != null) {
-                    socket.close();
-                }
-            } catch (Exception ignored) {
-            }
+            closeSocketQuietly();
+            writeExecutor.shutdownNow();
         }
     }
 
@@ -243,7 +246,7 @@ final class TerminalSocketClient {
         }
     }
 
-    private void sendJson(JSONObject object) {
+    private void sendJsonSync(JSONObject object) {
         try {
             sendFrame(1, object.toString().getBytes(StandardCharsets.UTF_8));
         } catch (Exception error) {
@@ -253,18 +256,34 @@ final class TerminalSocketClient {
         }
     }
 
-    private void sendMessage(String type, Object... keyValues) {
+    private void sendMessageAsync(String type, Object... keyValues) {
+        try {
+            writeExecutor.execute(() -> sendMessageSync(type, keyValues));
+        } catch (RejectedExecutionException ignored) {
+        }
+    }
+
+    private void sendMessageSync(String type, Object... keyValues) {
         try {
             JSONObject object = new JSONObject();
             object.put("type", type);
             for (int i = 0; i + 1 < keyValues.length; i += 2) {
                 object.put(String.valueOf(keyValues[i]), keyValues[i + 1]);
             }
-            sendJson(object);
+            sendJsonSync(object);
         } catch (Exception error) {
             if (!closed) {
                 listener.onError(error.getMessage() == null ? error.toString() : error.getMessage());
             }
+        }
+    }
+
+    private void closeSocketQuietly() {
+        try {
+            if (socket != null) {
+                socket.close();
+            }
+        } catch (Exception ignored) {
         }
     }
 
