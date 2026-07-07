@@ -91,6 +91,8 @@ Implemented now:
   to GitHub
 - one-download-per-version APK cache, SHA-256 verification, and installer
   handoff
+- terminal viewport resize derived from the Android text area, including
+  keyboard height changes, to avoid fixed-width tmux output wrapping on phones
 - permission/about surfaces for unknown-app install status, notification status,
   app settings, app version/build type, package name, selected update source, and
   HTTP/WebSocket API/protocol summary

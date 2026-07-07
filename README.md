@@ -26,6 +26,8 @@ APIs directly:
   display
 - mobile soft-key row for tmux-oriented input, including tmux prefix, detach,
   new window, previous/next window, Ctrl keys, arrows, page keys, and paste
+- terminal viewport resize based on the phone's visible text area, including
+  keyboard height changes, so tmux output wraps at the same width the user sees
 - automatic update checks with Gitea first and GitHub fallback, plus manual
   source-specific checks
 - one-download-per-version APK cache, SHA-256 verification, and installer

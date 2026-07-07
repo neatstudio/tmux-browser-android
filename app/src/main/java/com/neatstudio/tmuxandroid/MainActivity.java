@@ -56,8 +56,12 @@ import java.util.concurrent.Executors;
 public final class MainActivity extends Activity {
     private static final int IMAGE_PICK_REQUEST = 2001;
     private static final long AUTO_UPDATE_INTERVAL_MS = 6L * 60L * 60L * 1000L;
-    private static final int TERMINAL_COLS = 96;
-    private static final int TERMINAL_ROWS = 32;
+    private static final int DEFAULT_TERMINAL_COLS = 80;
+    private static final int DEFAULT_TERMINAL_ROWS = 24;
+    private static final int MIN_TERMINAL_COLS = 36;
+    private static final int MAX_TERMINAL_COLS = 140;
+    private static final int MIN_TERMINAL_ROWS = 8;
+    private static final int MAX_TERMINAL_ROWS = 80;
     private static final int MAX_TERMINAL_CHARS = 40_000;
     private static final int STATUS_NORMAL = 0;
     private static final int STATUS_BUSY = 1;
@@ -103,6 +107,8 @@ public final class MainActivity extends Activity {
     private boolean terminalConnected;
     private boolean terminalRenderPending;
     private long lastTerminalRenderMs;
+    private int terminalCols = DEFAULT_TERMINAL_COLS;
+    private int terminalRows = DEFAULT_TERMINAL_ROWS;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -970,6 +976,8 @@ public final class MainActivity extends Activity {
         terminalConnected = false;
         terminalRenderPending = false;
         lastTerminalRenderMs = 0L;
+        terminalCols = DEFAULT_TERMINAL_COLS;
+        terminalRows = DEFAULT_TERMINAL_ROWS;
         root.removeAllViews();
         root.addView(createTerminalTopBar(sessionName), matchWrap());
 
@@ -990,6 +998,8 @@ public final class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         ));
+        terminalScroll.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
+                resizeTerminalToViewport(false));
         root.addView(terminalScroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
@@ -1004,7 +1014,10 @@ public final class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(28)
         ));
-        connectTerminal(sessionName);
+        terminalScroll.post(() -> {
+            resizeTerminalToViewport(false);
+            connectTerminal(sessionName);
+        });
     }
 
     private LinearLayout createTerminalTopBar(String sessionName) {
@@ -1133,12 +1146,12 @@ public final class MainActivity extends Activity {
                             break;
                         case 3:
                             if (terminalSocket != null) {
-                                terminalSocket.scroll(-TERMINAL_ROWS);
+                                terminalSocket.scroll(-terminalRows);
                             }
                             break;
                         case 4:
                             if (terminalSocket != null) {
-                                terminalSocket.scroll(TERMINAL_ROWS);
+                                terminalSocket.scroll(terminalRows);
                             }
                             break;
                         case 5:
@@ -1760,6 +1773,7 @@ public final class MainActivity extends Activity {
         queuedTerminalInput.setLength(0);
         terminalConnected = false;
         setStatus("Connecting " + sessionName);
+        resizeTerminalToViewport(false);
         appendTerminal("[connecting]\r\n");
         terminalSocket = new TerminalSocketClient(new TerminalSocketClient.Listener() {
             @Override
@@ -1767,6 +1781,7 @@ public final class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     terminalConnected = true;
                     setStatus("Connected " + sessionName);
+                    resizeTerminalToViewport(true);
                     flushQueuedTerminalInput();
                 });
             }
@@ -1792,7 +1807,39 @@ public final class MainActivity extends Activity {
                 });
             }
         });
-        terminalSocket.connect(api.getBaseUrl(), sessionName, TERMINAL_COLS, TERMINAL_ROWS);
+        terminalSocket.connect(api.getBaseUrl(), sessionName, terminalCols, terminalRows);
+    }
+
+    private void resizeTerminalToViewport(boolean forceSend) {
+        if (terminalText == null || terminalScroll == null) {
+            return;
+        }
+        int width = terminalScroll.getWidth();
+        int height = terminalScroll.getHeight();
+        if (width <= 0 || height <= 0) {
+            return;
+        }
+        int horizontalPadding = terminalText.getPaddingLeft() + terminalText.getPaddingRight();
+        int verticalPadding = terminalText.getPaddingTop() + terminalText.getPaddingBottom();
+        float charWidth = terminalText.getPaint().measureText("W");
+        if (charWidth <= 0f) {
+            charWidth = dp(8);
+        }
+        int lineHeight = terminalText.getLineHeight();
+        if (lineHeight <= 0) {
+            lineHeight = dp(16);
+        }
+        int cols = clamp((int) Math.floor((width - horizontalPadding) / charWidth), MIN_TERMINAL_COLS, MAX_TERMINAL_COLS);
+        int rows = clamp((height - verticalPadding) / lineHeight, MIN_TERMINAL_ROWS, MAX_TERMINAL_ROWS);
+        if (cols == terminalCols && rows == terminalRows && !forceSend) {
+            return;
+        }
+        terminalCols = cols;
+        terminalRows = rows;
+        TerminalSocketClient socket = terminalSocket;
+        if (socket != null && !socket.isClosed() && terminalConnected) {
+            socket.resize(cols, rows);
+        }
     }
 
     private void sendLine() {
@@ -2259,6 +2306,10 @@ public final class MainActivity extends Activity {
             return STATUS_SUCCESS;
         }
         return STATUS_NORMAL;
+    }
+
+    private int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private int dp(int value) {
