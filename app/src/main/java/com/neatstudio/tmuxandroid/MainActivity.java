@@ -1949,6 +1949,14 @@ public final class MainActivity extends Activity {
         while (index < text.length()) {
             char item = text.charAt(index);
             if (item == '\r') {
+                deleteCurrentTerminalLine(output);
+                index++;
+                continue;
+            }
+            if (item == '\b') {
+                if (output.length() > 0 && output.charAt(output.length() - 1) != '\n') {
+                    output.delete(output.length() - 1, output.length());
+                }
                 index++;
                 continue;
             }
@@ -1963,15 +1971,32 @@ public final class MainActivity extends Activity {
                     fg = state[0];
                     bg = state[1];
                     bold = state[2] == 1;
+                } else if (command == 'K') {
+                    String params = text.substring(index + 2, end);
+                    if (params.startsWith("2")) {
+                        deleteCurrentTerminalLine(output);
+                    }
+                } else if (command == 'J') {
+                    String params = text.substring(index + 2, end);
+                    if (params.startsWith("2") || params.startsWith("3")) {
+                        output.clear();
+                    }
                 }
                 index = end + 1;
                 continue;
+            }
+            if (item == '\u001b') {
+                int skipped = skipNonCsiEscape(text, index);
+                if (skipped > index) {
+                    index = skipped;
+                    continue;
+                }
             }
 
             int runStart = index;
             while (index < text.length()) {
                 char runItem = text.charAt(index);
-                if (runItem == '\r' || (runItem == '\u001b' && index + 1 < text.length() && text.charAt(index + 1) == '[')) {
+                if (runItem == '\r' || runItem == '\b' || runItem == '\u001b') {
                     break;
                 }
                 index++;
@@ -1979,6 +2004,41 @@ public final class MainActivity extends Activity {
             appendTerminalRun(output, text.substring(runStart, index), fg, bg, bold);
         }
         return output;
+    }
+
+    private void deleteCurrentTerminalLine(SpannableStringBuilder output) {
+        int start = output.length();
+        while (start > 0 && output.charAt(start - 1) != '\n') {
+            start--;
+        }
+        if (start < output.length()) {
+            output.delete(start, output.length());
+        }
+    }
+
+    private int skipNonCsiEscape(String text, int index) {
+        if (index + 1 >= text.length()) {
+            return index + 1;
+        }
+        char next = text.charAt(index + 1);
+        if (next == ']' || next == 'P' || next == '^' || next == '_') {
+            int cursor = index + 2;
+            while (cursor < text.length()) {
+                char item = text.charAt(cursor);
+                if (item == '\u0007') {
+                    return cursor + 1;
+                }
+                if (item == '\u001b' && cursor + 1 < text.length() && text.charAt(cursor + 1) == '\\') {
+                    return cursor + 2;
+                }
+                cursor++;
+            }
+            return text.length();
+        }
+        if (next == '(' || next == ')' || next == '*' || next == '+' || next == '-' || next == '.') {
+            return Math.min(index + 3, text.length());
+        }
+        return Math.min(index + 2, text.length());
     }
 
     private void appendTerminalRun(SpannableStringBuilder output, String text, int fg, int bg, boolean bold) {
