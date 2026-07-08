@@ -99,6 +99,7 @@ public final class MainActivity extends Activity {
     private ScrollView terminalScroll;
     private EditText inputField;
     private View terminalComposerBar;
+    private LinearLayout terminalGroupRow;
     private String activeSessionName;
     private String activeMainPage = PAGE_SERVERS;
     private String pendingImageUploadSession;
@@ -1087,6 +1088,7 @@ public final class MainActivity extends Activity {
     }
 
     private void openTerminal(String sessionName) {
+        closeTerminalSocket();
         activeSessionName = sessionName;
         projectList = null;
         terminalScreen = new TerminalScreenBuffer(DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS);
@@ -1101,6 +1103,10 @@ public final class MainActivity extends Activity {
         terminalRows = DEFAULT_TERMINAL_ROWS;
         root.removeAllViews();
         root.addView(createTerminalTopBar(sessionName), matchWrap());
+        root.addView(createTerminalGroupBar(), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(38)
+        ));
 
         terminalScroll = new ScrollView(this);
         terminalScroll.setFillViewport(true);
@@ -1141,6 +1147,7 @@ public final class MainActivity extends Activity {
         terminalScroll.post(() -> {
             resizeTerminalToViewport(false);
             connectTerminal(sessionName);
+            refreshTerminalGroupSessions(sessionName);
         });
         inputField.post(() -> {
             inputField.requestFocus();
@@ -1152,19 +1159,134 @@ public final class MainActivity extends Activity {
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setPadding(dp(8), dp(6), dp(8), dp(6));
+        bar.setPadding(dp(5), dp(5), dp(5), dp(5));
         bar.setBackgroundColor(Color.rgb(17, 20, 24));
-        bar.addView(toolbarButton("Back", view -> openSessionPage()));
+        bar.addView(terminalToolButton("‹", view -> openSessionPage()));
         TextView title = new TextView(this);
         title.setText(sessionName);
         title.setTextColor(Color.WHITE);
-        title.setTextSize(16);
+        title.setTextSize(15);
         title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setPadding(dp(10), 0, dp(10), 0);
-        bar.addView(title, new LinearLayout.LayoutParams(0, dp(42), 1));
-        bar.addView(toolbarButton("Reconnect", view -> connectTerminal(sessionName)));
-        bar.addView(toolbarButton("More", view -> showTerminalActions(sessionName)));
+        title.setSingleLine(true);
+        title.setPadding(dp(8), 0, dp(8), 0);
+        bar.addView(title, new LinearLayout.LayoutParams(0, dp(36), 1));
+        bar.addView(terminalToolButton("↻", view -> connectTerminal(sessionName)));
+        bar.addView(terminalToolButton("⋯", view -> showTerminalActions(sessionName)));
         return bar;
+    }
+
+    private HorizontalScrollView createTerminalGroupBar() {
+        HorizontalScrollView scroller = new HorizontalScrollView(this);
+        scroller.setHorizontalScrollBarEnabled(false);
+        scroller.setBackgroundColor(Color.rgb(13, 17, 22));
+
+        terminalGroupRow = new LinearLayout(this);
+        terminalGroupRow.setOrientation(LinearLayout.HORIZONTAL);
+        terminalGroupRow.setGravity(Gravity.CENTER_VERTICAL);
+        terminalGroupRow.setPadding(dp(5), dp(3), dp(5), dp(3));
+        terminalGroupRow.addView(groupLabel("group..."));
+
+        scroller.addView(terminalGroupRow, new HorizontalScrollView.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+        ));
+        return scroller;
+    }
+
+    private void refreshTerminalGroupSessions(String sessionName) {
+        executor.execute(() -> {
+            try {
+                String text = api.kanbanProjects();
+                runOnUiThread(() -> renderTerminalGroupSessions(sessionName, text));
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    if (sessionName.equals(activeSessionName) && terminalGroupRow != null) {
+                        terminalGroupRow.removeAllViews();
+                        terminalGroupRow.addView(groupLabel("group failed"));
+                    }
+                });
+            }
+        });
+    }
+
+    private void renderTerminalGroupSessions(String sessionName, String text) {
+        if (!sessionName.equals(activeSessionName) || terminalGroupRow == null) {
+            return;
+        }
+        terminalGroupRow.removeAllViews();
+        try {
+            JSONObject rootObject = new JSONObject(text == null || text.isEmpty() ? "{}" : text);
+            JSONArray projects = rootObject.optJSONArray("projects");
+            if (projects == null) {
+                terminalGroupRow.addView(groupLabel("no group"));
+                return;
+            }
+            for (int projectIndex = 0; projectIndex < projects.length(); projectIndex++) {
+                JSONObject project = projects.optJSONObject(projectIndex);
+                if (project == null) {
+                    continue;
+                }
+                JSONArray agents = project.optJSONArray("agents");
+                if (!projectContainsSession(agents, sessionName)) {
+                    continue;
+                }
+                terminalGroupRow.addView(groupLabel(compactLabel(project.optString("name", "group"), 14)));
+                for (int agentIndex = 0; agents != null && agentIndex < agents.length(); agentIndex++) {
+                    JSONObject agent = agents.optJSONObject(agentIndex);
+                    String agentSession = agentSessionName(agent);
+                    if (!agentSession.isEmpty()) {
+                        terminalGroupRow.addView(groupSessionButton(agentSession, agentSession.equals(sessionName)));
+                    }
+                }
+                return;
+            }
+            terminalGroupRow.addView(groupLabel("no group"));
+        } catch (Exception error) {
+            terminalGroupRow.addView(groupLabel("group parse"));
+        }
+    }
+
+    private boolean projectContainsSession(JSONArray agents, String sessionName) {
+        if (agents == null) {
+            return false;
+        }
+        for (int index = 0; index < agents.length(); index++) {
+            if (sessionName.equals(agentSessionName(agents.optJSONObject(index)))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String agentSessionName(JSONObject agent) {
+        if (agent == null) {
+            return "";
+        }
+        return defaultValue(agent.optString("sessionName", ""), agent.optString("name", ""));
+    }
+
+    private TextView groupLabel(String text) {
+        TextView label = new TextView(this);
+        label.setText(text);
+        label.setTextColor(Color.rgb(139, 148, 158));
+        label.setTextSize(11);
+        label.setTypeface(Typeface.DEFAULT_BOLD);
+        label.setGravity(Gravity.CENTER_VERTICAL);
+        label.setPadding(dp(5), 0, dp(6), 0);
+        return label;
+    }
+
+    private Button groupSessionButton(String sessionName, boolean active) {
+        Button button = terminalToolButton(compactLabel(sessionName, 12), view -> {
+            if (!sessionName.equals(activeSessionName)) {
+                openTerminal(sessionName);
+            }
+        });
+        if (active) {
+            button.setTextColor(Color.rgb(8, 12, 18));
+            button.setBackground(rounded(Color.rgb(86, 211, 219), 7, Color.rgb(86, 211, 219), 1));
+        }
+        return button;
     }
 
     private void showSessionActions(String sessionName) {
@@ -1975,12 +2097,12 @@ public final class MainActivity extends Activity {
                 addSoftKey(topRow, "→", "\u001b[C");
                 addSoftKey(topRow, "↑", "\u001b[A");
                 addSoftKey(topRow, "↓", "\u001b[B");
-                addSoftKey(topRow, "Home", "\u001b[H");
+                addSoftKey(topRow, "Hm", "\u001b[H");
                 addSoftKey(bottomRow, "End", "\u001b[F");
-                addSoftKey(bottomRow, "PgUp", "\u001b[5~");
-                addSoftKey(bottomRow, "PgDn", "\u001b[6~");
-                addSoftKey(bottomRow, "Tmux", "\u0002");
-                addSoftKey(bottomRow, "Detach", "\u0002d");
+                addSoftKey(bottomRow, "Pg↑", "\u001b[5~");
+                addSoftKey(bottomRow, "Pg↓", "\u001b[6~");
+                addSoftKey(bottomRow, "^B", "\u0002");
+                addSoftKey(bottomRow, "Dch", "\u0002d");
                 addSoftKey(bottomRow, "New", "\u0002c");
                 addSoftKey(bottomRow, "Prev", "\u0002p");
                 addSoftKey(bottomRow, "Next", "\u0002n");
@@ -2003,14 +2125,14 @@ public final class MainActivity extends Activity {
                 addComposerButton(topRow, "→", () -> moveComposerCursor(1));
                 addSoftKey(topRow, "↑", "\u001b[A");
                 addSoftKey(topRow, "↓", "\u001b[B");
-                addSoftKey(topRow, "Enter", TERMINAL_ENTER);
+                addSoftKey(topRow, "↵", TERMINAL_ENTER);
                 addAccessoryButton(topRow, "NL", view -> insertComposerText("\n"));
-                addSoftButton(bottomRow, "Paste", view -> pasteClipboard());
-                addAccessoryButton(bottomRow, "Back", view -> backspaceComposerText());
-                addAccessoryButton(bottomRow, "Kbd", view -> showKeyboard());
-                addAccessoryButton(bottomRow, "Hide", view -> hideKeyboard());
-                addAccessoryButton(bottomRow, "Bottom", view -> scrollTerminalBottom());
-                addAccessoryButton(bottomRow, "Select", view -> toggleTerminalSelection());
+                addSoftButton(bottomRow, "Pst", view -> pasteClipboard());
+                addAccessoryButton(bottomRow, "⌫", view -> backspaceComposerText());
+                addAccessoryButton(bottomRow, "⌨", view -> showKeyboard());
+                addAccessoryButton(bottomRow, "⌄", view -> hideKeyboard());
+                addAccessoryButton(bottomRow, "⇣", view -> scrollTerminalBottom());
+                addAccessoryButton(bottomRow, "Sel", view -> toggleTerminalSelection());
                 break;
         }
     }
@@ -2397,6 +2519,22 @@ public final class MainActivity extends Activity {
         return button;
     }
 
+    private Button terminalToolButton(String label, View.OnClickListener listener) {
+        Button button = toolbarButton(label, listener);
+        button.setTextSize(label.length() <= 2 ? 16 : 10);
+        button.setPadding(dp(5), 0, dp(5), 0);
+        button.setMinWidth(dp(label.length() <= 2 ? 36 : 48));
+        button.setMinimumWidth(dp(label.length() <= 2 ? 36 : 48));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                dp(30)
+        );
+        params.leftMargin = dp(2);
+        params.rightMargin = dp(2);
+        button.setLayoutParams(params);
+        return button;
+    }
+
     private void styleInput(EditText input) {
         input.setTextColor(Color.rgb(240, 246, 252));
         input.setHintTextColor(Color.rgb(139, 148, 158));
@@ -2494,6 +2632,17 @@ public final class MainActivity extends Activity {
 
     private String defaultValue(String value, String fallback) {
         return value == null || value.isEmpty() ? fallback : value;
+    }
+
+    private String compactLabel(String value, int maxChars) {
+        if (value == null) {
+            return "";
+        }
+        String trimmed = value.trim();
+        if (trimmed.length() <= maxChars) {
+            return trimmed;
+        }
+        return trimmed.substring(0, Math.max(1, maxChars - 1)) + "…";
     }
 
     private LinearLayout.LayoutParams matchWrap() {
