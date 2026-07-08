@@ -67,6 +67,7 @@ public final class MainActivity extends Activity {
     private static final String OLD_LOCAL_DEFAULT_URL = "http://127.0.0.1:3000";
     private static final String OLD_GITHUB_DEFAULT_UPDATE_URL = "https://github.com/neatstudio/tmux-browser-android/releases/latest/download/latest.json";
     private static final String DEFAULT_TAILSCALE_URL = "http://100.89.0.116:3000";
+    private static final String PAGE_SERVERS = "Servers";
     private static final String PAGE_SESSIONS = "Sessions";
     private static final String PAGE_PROJECTS = "Projects";
     private static final String PAGE_TOOLS = "Tools";
@@ -97,7 +98,7 @@ public final class MainActivity extends Activity {
     private EditText inputField;
     private View terminalComposerBar;
     private String activeSessionName;
-    private String activeMainPage = PAGE_SESSIONS;
+    private String activeMainPage = PAGE_SERVERS;
     private String pendingImageUploadSession;
     private TerminalScreenBuffer terminalScreen = new TerminalScreenBuffer(DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS);
     private final StringBuilder queuedTerminalInput = new StringBuilder();
@@ -133,7 +134,7 @@ public final class MainActivity extends Activity {
             getWindow().setStatusBarColor(Color.rgb(17, 20, 24));
             getWindow().setNavigationBarColor(Color.rgb(17, 20, 24));
         }
-        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
         api = new SessionApiClient(getServerUrl());
         setContentView(createRoot());
         updateManager = new UpdateManager(this, prefs, new UpdateManager.Callback() {
@@ -147,8 +148,7 @@ public final class MainActivity extends Activity {
                 showMessage(message);
             }
         });
-        renderSessionScreen();
-        refreshSessions();
+        renderServerScreen();
         connectAppEvents();
         maybeCheckForUpdates();
     }
@@ -177,7 +177,9 @@ public final class MainActivity extends Activity {
         view.setOnApplyWindowInsetsListener((target, insets) -> {
             int bottom = insets.getSystemWindowInsetBottom();
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                bottom = insets.getInsets(WindowInsets.Type.systemBars()).bottom;
+                int systemBottom = insets.getInsets(WindowInsets.Type.systemBars()).bottom;
+                int imeBottom = insets.getInsets(WindowInsets.Type.ime()).bottom;
+                bottom = Math.max(systemBottom, imeBottom);
             }
             target.setPadding(
                     0,
@@ -191,16 +193,94 @@ public final class MainActivity extends Activity {
         view.post(view::requestApplyInsets);
     }
 
+    private void renderServerScreen() {
+        closeTerminalSocket();
+        activeSessionName = null;
+        activeMainPage = PAGE_SERVERS;
+        projectList = null;
+        root.removeAllViews();
+        root.addView(createMainTabs(PAGE_SERVERS), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(48)
+        ));
+        root.addView(progressBar, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(3)
+        ));
+
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout content = pageContent();
+        content.addView(infoBlock(
+                "Server",
+                "Active API: " + getServerUrl() + "\nHTTP and WebSocket use port 3000."
+        ));
+
+        content.addView(sectionTitle("Tailscale servers"));
+        for (String url : SERVER_PROFILES) {
+            content.addView(serverProfileCard(url), matchWrap());
+        }
+
+        content.addView(sectionTitle("Custom server"));
+        content.addView(createServerBar());
+        content.addView(actionPanel(
+                actionButton("Open sessions", view -> openSessionPage()),
+                actionButton("Probe all", view -> probeServerProfiles()),
+                actionButton("Health", view -> showRaw("Health", () -> api.health())),
+                actionButton("Update", view -> renderUpdateScreen())
+        ));
+        scroll.addView(content);
+        root.addView(scroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1
+        ));
+        root.addView(statusText, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(28)
+        ));
+        setStatus("Servers");
+    }
+
+    private View serverProfileCard(String url) {
+        String label = url.replace("http://", "").replace(":3000", "");
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(12), dp(11), dp(12), dp(11));
+        card.setBackground(rounded(Color.rgb(27, 33, 40), 8, Color.rgb(45, 54, 64), 1));
+
+        TextView title = new TextView(this);
+        title.setText(label);
+        title.setTextColor(Color.WHITE);
+        title.setTextSize(16);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        TextView meta = bodyText(url);
+        meta.setPadding(0, dp(4), 0, dp(8));
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.addView(toolbarButton("Use", view -> {
+            selectServer(url);
+            openSessionPage();
+        }));
+        actions.addView(toolbarButton("Probe", view -> probeSingleServer(url)));
+
+        card.addView(title);
+        card.addView(meta);
+        card.addView(actions);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        params.bottomMargin = dp(8);
+        card.setLayoutParams(params);
+        return card;
+    }
+
     private void renderSessionScreen() {
         closeTerminalSocket();
         activeSessionName = null;
         activeMainPage = PAGE_SESSIONS;
         root.removeAllViews();
-        root.addView(createServerBar(), matchWrap());
-        root.addView(createServerProfileBar(), new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(46)
-        ));
         root.addView(createMainTabs(PAGE_SESSIONS), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(48)
@@ -213,11 +293,23 @@ public final class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         LinearLayout content = pageContent();
         content.addView(sessionSummaryBlock());
+        content.addView(sectionTitle("Session actions"));
+        content.addView(actionPanel(
+                actionButton("New session", view -> promptCreateSession()),
+                actionButton("Refresh", view -> refreshSessions()),
+                actionButton("New project", view -> promptCreateKanbanProject()),
+                actionButton("Projects", view -> renderProjectsScreen())
+        ));
         content.addView(sectionTitle("Tmux sessions"));
         LinearLayout list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
         list.setTag("session-list");
         content.addView(list);
+        content.addView(sectionTitle("Project groups"));
+        projectList = new LinearLayout(this);
+        projectList.setOrientation(LinearLayout.VERTICAL);
+        projectList.addView(projectStateText("Loading after sessions..."), matchWrap());
+        content.addView(projectList, matchWrap());
         scroll.addView(content);
         root.addView(scroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -228,6 +320,13 @@ public final class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(28)
         ));
+        setStatus("Sessions");
+    }
+
+    private void openSessionPage() {
+        renderSessionScreen();
+        refreshSessions();
+        refreshProjects();
     }
 
     private View sessionSummaryBlock() {
@@ -243,6 +342,7 @@ public final class MainActivity extends Activity {
         closeTerminalSocket();
         activeSessionName = null;
         activeMainPage = PAGE_TOOLS;
+        projectList = null;
         root.removeAllViews();
         root.addView(createServerBar(), matchWrap());
         root.addView(createMainTabs(PAGE_TOOLS), new LinearLayout.LayoutParams(
@@ -359,6 +459,7 @@ public final class MainActivity extends Activity {
         closeTerminalSocket();
         activeSessionName = null;
         activeMainPage = PAGE_UPDATE;
+        projectList = null;
         root.removeAllViews();
         root.addView(createServerBar(), matchWrap());
         root.addView(createMainTabs(PAGE_UPDATE), new LinearLayout.LayoutParams(
@@ -412,6 +513,7 @@ public final class MainActivity extends Activity {
         closeTerminalSocket();
         activeSessionName = null;
         activeMainPage = PAGE_ABOUT;
+        projectList = null;
         root.removeAllViews();
         root.addView(createServerBar(), matchWrap());
         root.addView(createMainTabs(PAGE_ABOUT), new LinearLayout.LayoutParams(
@@ -505,6 +607,11 @@ public final class MainActivity extends Activity {
     }
 
     private void addContextActions(LinearLayout actionRow) {
+        if (PAGE_SERVERS.equals(activeMainPage)) {
+            actionRow.addView(toolbarButton("Use", view -> saveServerAndRefresh()));
+            actionRow.addView(toolbarButton("Probe", view -> probeSingleServer(currentUrlInput())));
+            return;
+        }
         if (PAGE_SESSIONS.equals(activeMainPage)) {
             actionRow.addView(toolbarButton("New", view -> promptCreateSession()));
             actionRow.addView(toolbarButton("Refresh", view -> refreshSessions()));
@@ -573,10 +680,8 @@ public final class MainActivity extends Activity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(8), dp(4), dp(8), dp(4));
-        row.addView(navButton(PAGE_SESSIONS, selected, view -> {
-            renderSessionScreen();
-            refreshSessions();
-        }));
+        row.addView(navButton(PAGE_SERVERS, selected, view -> renderServerScreen()));
+        row.addView(navButton(PAGE_SESSIONS, selected, view -> openSessionPage()));
         row.addView(navButton(PAGE_PROJECTS, selected, view -> renderProjectsScreen()));
         row.addView(navButton(PAGE_TOOLS, selected, view -> renderToolsScreen()));
         row.addView(navButton(PAGE_UPDATE, selected, view -> renderUpdateScreen()));
@@ -694,7 +799,9 @@ public final class MainActivity extends Activity {
     private void selectServer(String url) {
         prefs.edit().putString("server_url", url).apply();
         api = new SessionApiClient(url);
-        urlField.setText(url);
+        if (urlField != null) {
+            urlField.setText(url);
+        }
         setStatus("Selected " + url);
         connectAppEvents();
         if (PAGE_SESSIONS.equals(activeMainPage)) {
@@ -702,6 +809,14 @@ public final class MainActivity extends Activity {
         } else if (PAGE_PROJECTS.equals(activeMainPage)) {
             refreshProjects();
         }
+    }
+
+    private String currentUrlInput() {
+        if (urlField == null) {
+            return getServerUrl();
+        }
+        String text = urlField.getText().toString().trim();
+        return text.isEmpty() ? getServerUrl() : text;
     }
 
     private void refreshSessions() {
@@ -971,6 +1086,7 @@ public final class MainActivity extends Activity {
 
     private void openTerminal(String sessionName) {
         activeSessionName = sessionName;
+        projectList = null;
         terminalScreen = new TerminalScreenBuffer(DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS);
         queuedTerminalInput.setLength(0);
         terminalConnected = false;
@@ -1036,10 +1152,7 @@ public final class MainActivity extends Activity {
         bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.setPadding(dp(8), dp(6), dp(8), dp(6));
         bar.setBackgroundColor(Color.rgb(17, 20, 24));
-        bar.addView(toolbarButton("Back", view -> {
-            renderSessionScreen();
-            refreshSessions();
-        }));
+        bar.addView(toolbarButton("Back", view -> openSessionPage()));
         TextView title = new TextView(this);
         title.setText(sessionName);
         title.setTextColor(Color.WHITE);
@@ -1592,6 +1705,33 @@ public final class MainActivity extends Activity {
         });
     }
 
+    private void probeSingleServer(String url) {
+        String normalized = normalizeServerUrl(url);
+        progressBar.setVisibility(View.VISIBLE);
+        setStatus("Probing " + normalized);
+        executor.execute(() -> {
+            try {
+                SessionApiClient client = new SessionApiClient(normalized);
+                JSONObject health = new JSONObject(client.health());
+                List<SessionSummary> sessions = client.getSessions();
+                String text = normalized + "\n"
+                        + "ok: true\n"
+                        + "version: " + health.optString("version", "unknown")
+                        + " " + health.optString("commit", "") + "\n"
+                        + "sessions: " + sessions.size();
+                runOnUiThread(() -> {
+                    progressBar.setVisibility(View.GONE);
+                    showTextDialog("API probe", text);
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    progressBar.setVisibility(View.GONE);
+                    showMessage("Probe failed: " + error.getMessage());
+                });
+            }
+        });
+    }
+
     private void openInstallPermissionSettings() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
             showMessage("Install permission is allowed on this Android version");
@@ -1677,6 +1817,11 @@ public final class MainActivity extends Activity {
                     showMessage(label + " done");
                     if (PAGE_PROJECTS.equals(activeMainPage)) {
                         refreshProjects();
+                    } else if (PAGE_SESSIONS.equals(activeMainPage)) {
+                        refreshSessions();
+                        if (projectList != null) {
+                            refreshProjects();
+                        }
                     } else if (activeSessionName == null) {
                         refreshSessions();
                     }
@@ -2509,8 +2654,7 @@ public final class MainActivity extends Activity {
     @Override
     public void onBackPressed() {
         if (activeSessionName != null) {
-            renderSessionScreen();
-            refreshSessions();
+            openSessionPage();
             return;
         }
         super.onBackPressed();
