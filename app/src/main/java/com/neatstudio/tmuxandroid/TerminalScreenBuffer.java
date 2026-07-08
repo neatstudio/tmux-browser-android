@@ -109,6 +109,8 @@ final class TerminalScreenBuffer {
                     putChar(' ');
                 }
                 index++;
+            } else if (isNakedDeviceAttributesTail(text, index)) {
+                index = skipNakedDeviceAttributesTail(text, index);
             } else if (item >= 0x20 && item != 0x7f) {
                 putChar(item);
                 index++;
@@ -493,6 +495,36 @@ final class TerminalScreenBuffer {
             cursor++;
         }
         return -1;
+    }
+
+    private boolean isNakedDeviceAttributesTail(String text, int index) {
+        int cursor = index;
+        boolean hasSemicolon = false;
+        if (cursor < text.length() && (text.charAt(cursor) == '?' || text.charAt(cursor) == '>')) {
+            cursor++;
+        }
+        while (cursor < text.length()) {
+            char item = text.charAt(cursor);
+            if (item >= '0' && item <= '9') {
+                cursor++;
+                continue;
+            }
+            if (item == ';') {
+                hasSemicolon = true;
+                cursor++;
+                continue;
+            }
+            return item == 'c' && hasSemicolon && cursor > index && cursor - index <= 16;
+        }
+        return false;
+    }
+
+    private int skipNakedDeviceAttributesTail(String text, int index) {
+        int cursor = index;
+        while (cursor < text.length() && text.charAt(cursor) != 'c') {
+            cursor++;
+        }
+        return Math.min(cursor + 1, text.length());
     }
 
     private int findAnsiEnd(String text, int start) {

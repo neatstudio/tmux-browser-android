@@ -22,11 +22,13 @@ import android.provider.Settings;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.HorizontalScrollView;
@@ -999,10 +1001,10 @@ public final class MainActivity extends Activity {
                 0,
                 1
         ));
-        root.addView(createInputBar(), matchWrap());
-        root.addView(createSoftKeyBar(), new LinearLayout.LayoutParams(
+        root.addView(createComposerBar(), matchWrap());
+        root.addView(createSoftKeyPad(), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(46)
+                dp(92)
         ));
         root.addView(statusText, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1176,30 +1178,55 @@ public final class MainActivity extends Activity {
                 .show();
     }
 
-    private LinearLayout createInputBar() {
+    private LinearLayout createComposerBar() {
         LinearLayout bar = new LinearLayout(this);
-        bar.setOrientation(LinearLayout.HORIZONTAL);
-        bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setPadding(dp(8), dp(5), dp(8), dp(5));
+        bar.setOrientation(LinearLayout.VERTICAL);
+        bar.setPadding(dp(8), dp(5), dp(8), dp(6));
         bar.setBackgroundColor(Color.rgb(17, 20, 24));
 
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.BOTTOM);
+
         inputField = new EditText(this);
-        inputField.setSingleLine(true);
         inputField.setTextColor(Color.WHITE);
         inputField.setHintTextColor(Color.rgb(150, 158, 168));
-        inputField.setHint("type command or text");
-        inputField.setImeOptions(EditorInfo.IME_ACTION_SEND);
-        inputField.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        styleInput(inputField);
+        inputField.setHint("type command, text, or multi-line paste");
+        inputField.setSingleLine(false);
+        inputField.setMinLines(1);
+        inputField.setMaxLines(4);
+        inputField.setGravity(Gravity.TOP | Gravity.START);
+        inputField.setImeOptions(EditorInfo.IME_ACTION_NONE);
+        inputField.setInputType(InputType.TYPE_CLASS_TEXT
+                | InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        styleComposerInput(inputField);
         inputField.setOnEditorActionListener((view, actionId, event) -> {
-            if (actionId == EditorInfo.IME_ACTION_SEND) {
+            if (event != null
+                    && event.getKeyCode() == KeyEvent.KEYCODE_ENTER
+                    && event.isShiftPressed()
+                    && event.getAction() == KeyEvent.ACTION_UP) {
                 sendLine();
                 return true;
             }
             return false;
         });
-        bar.addView(inputField, new LinearLayout.LayoutParams(0, dp(42), 1));
-        bar.addView(toolbarButton("Send", view -> sendLine()));
+        row.addView(inputField, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        row.addView(toolbarButton("Send", view -> sendLine()), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                dp(54)
+        ));
+        bar.addView(row, matchWrap());
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setGravity(Gravity.CENTER_VERTICAL);
+        actions.setPadding(0, dp(5), 0, 0);
+        actions.addView(compactButton("Enter", view -> sendTerminalInput("\r")));
+        actions.addView(compactButton("NL", view -> insertComposerText("\n")));
+        actions.addView(compactButton("Hide", view -> hideKeyboard()));
+        actions.addView(compactButton("Clear", view -> inputField.setText("")));
+        bar.addView(actions, matchWrap());
         return bar;
     }
 
@@ -1720,7 +1747,22 @@ public final class MainActivity extends Activity {
         return input;
     }
 
-    private HorizontalScrollView createSoftKeyBar() {
+    private LinearLayout createSoftKeyPad() {
+        LinearLayout pad = new LinearLayout(this);
+        pad.setOrientation(LinearLayout.VERTICAL);
+        pad.setBackgroundColor(Color.rgb(22, 27, 34));
+        pad.addView(createSoftKeyRow(
+                new String[]{"Esc", "Tab", "^C", "^D", "^L", "^R", "^A", "^E", "^V", "^Z", "^\\", "Paste"},
+                new String[]{"\u001b", "\t", "\u0003", "\u0004", "\u000c", "\u0012", "\u0001", "\u0005", "\u0016", "\u001a", "\u001c", null}
+        ), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        pad.addView(createSoftKeyRow(
+                new String[]{"Tmux", "Detach", "NewWin", "PrevWin", "NextWin", "Left", "Down", "Up", "Right", "PgUp", "PgDn", "Home", "End"},
+                new String[]{"\u0002", "\u0002d", "\u0002c", "\u0002p", "\u0002n", "\u001b[D", "\u001b[B", "\u001b[A", "\u001b[C", "\u001b[5~", "\u001b[6~", "\u001b[H", "\u001b[F"}
+        ), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        return pad;
+    }
+
+    private HorizontalScrollView createSoftKeyRow(String[] labels, String[] sequences) {
         HorizontalScrollView scroller = new HorizontalScrollView(this);
         scroller.setHorizontalScrollBarEnabled(false);
         scroller.setBackgroundColor(Color.rgb(22, 27, 34));
@@ -1729,32 +1771,15 @@ public final class MainActivity extends Activity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(6), dp(4), dp(6), dp(4));
-        addSoftKey(row, "Enter", "\r");
-        addSoftKey(row, "Esc", "\u001b");
-        addSoftKey(row, "Tab", "\t");
-        addSoftKey(row, "^C", "\u0003");
-        addSoftKey(row, "^D", "\u0004");
-        addSoftKey(row, "^L", "\u000c");
-        addSoftKey(row, "^R", "\u0012");
-        addSoftKey(row, "^A", "\u0001");
-        addSoftKey(row, "^E", "\u0005");
-        addSoftKey(row, "^V", "\u0016");
-        addSoftKey(row, "^Z", "\u001a");
-        addSoftKey(row, "^\\", "\u001c");
-        addSoftKey(row, "Tmux", "\u0002");
-        addSoftKey(row, "Detach", "\u0002d");
-        addSoftKey(row, "NewWin", "\u0002c");
-        addSoftKey(row, "NextWin", "\u0002n");
-        addSoftKey(row, "PrevWin", "\u0002p");
-        addSoftKey(row, "Left", "\u001b[D");
-        addSoftKey(row, "Down", "\u001b[B");
-        addSoftKey(row, "Up", "\u001b[A");
-        addSoftKey(row, "Right", "\u001b[C");
-        addSoftKey(row, "PgUp", "\u001b[5~");
-        addSoftKey(row, "PgDn", "\u001b[6~");
-        addSoftKey(row, "Home", "\u001b[H");
-        addSoftKey(row, "End", "\u001b[F");
-        addSoftButton(row, "Paste", view -> pasteClipboard());
+        for (int index = 0; index < labels.length; index++) {
+            String label = labels[index];
+            String sequence = sequences[index];
+            if (sequence == null) {
+                addSoftButton(row, label, view -> pasteClipboard());
+            } else {
+                addSoftKey(row, label, sequence);
+            }
+        }
         scroller.addView(row, new HorizontalScrollView.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
@@ -1845,10 +1870,16 @@ public final class MainActivity extends Activity {
         String text = inputField.getText().toString();
         if (text.isEmpty()) {
             sendTerminalInput("\r");
-        } else {
-            sendTerminalInput(text + "\r");
-            inputField.setText("");
+            return;
         }
+        String normalized = text.replace("\r\n", "\n").replace('\r', '\n').replace('\n', '\r');
+        if (!normalized.endsWith("\r")) {
+            normalized = normalized + "\r";
+        }
+        sendTerminalInput(normalized);
+        inputField.setText("");
+        hideKeyboard();
+        setStatus("Sent " + text.length() + " chars");
     }
 
     private void sendTerminalInput(String data) {
@@ -1904,6 +1935,27 @@ public final class MainActivity extends Activity {
         } else {
             showMessage("Clipboard is empty");
         }
+    }
+
+    private void insertComposerText(String text) {
+        if (inputField == null) {
+            return;
+        }
+        int start = Math.max(0, inputField.getSelectionStart());
+        int end = Math.max(0, inputField.getSelectionEnd());
+        inputField.getText().replace(Math.min(start, end), Math.max(start, end), text);
+        inputField.requestFocus();
+    }
+
+    private void hideKeyboard() {
+        if (inputField == null) {
+            return;
+        }
+        InputMethodManager manager = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (manager != null) {
+            manager.hideSoftInputFromWindow(inputField.getWindowToken(), 0);
+        }
+        inputField.clearFocus();
     }
 
     private void appendTerminal(String data) {
@@ -2037,6 +2089,23 @@ public final class MainActivity extends Activity {
         input.setSingleLine(true);
         input.setPadding(dp(10), 0, dp(10), 0);
         input.setBackground(rounded(Color.rgb(12, 17, 23), 8, Color.rgb(48, 58, 70), 1));
+    }
+
+    private void styleComposerInput(EditText input) {
+        input.setTextColor(Color.rgb(240, 246, 252));
+        input.setHintTextColor(Color.rgb(139, 148, 158));
+        input.setTextSize(14);
+        input.setPadding(dp(10), dp(8), dp(10), dp(8));
+        input.setBackground(rounded(Color.rgb(12, 17, 23), 8, Color.rgb(48, 58, 70), 1));
+    }
+
+    private Button compactButton(String label, View.OnClickListener listener) {
+        Button button = toolbarButton(label, listener);
+        button.setTextSize(11);
+        button.setPadding(dp(8), 0, dp(8), 0);
+        button.setMinWidth(dp(48));
+        button.setMinimumWidth(dp(48));
+        return button;
     }
 
     private StateListDrawable buttonBackground() {
