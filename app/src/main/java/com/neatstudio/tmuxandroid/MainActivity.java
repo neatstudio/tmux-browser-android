@@ -59,6 +59,7 @@ public final class MainActivity extends Activity {
     private static final int MAX_TERMINAL_COLS = 140;
     private static final int MIN_TERMINAL_ROWS = 8;
     private static final int MAX_TERMINAL_ROWS = 80;
+    private static final int TERMINAL_KEYS_HEIGHT_DP = 76;
     private static final int STATUS_NORMAL = 0;
     private static final int STATUS_BUSY = 1;
     private static final int STATUS_SUCCESS = 2;
@@ -73,6 +74,7 @@ public final class MainActivity extends Activity {
     private static final String PAGE_TOOLS = "Tools";
     private static final String PAGE_UPDATE = "Update";
     private static final String PAGE_ABOUT = "About";
+    private static final String TERMINAL_ENTER = "\n";
     private static final String[] SERVER_PROFILES = {
             "http://100.89.0.116:3000",
             "http://100.89.0.2:3000",
@@ -1134,7 +1136,7 @@ public final class MainActivity extends Activity {
         root.addView(terminalComposerBar, matchWrap());
         root.addView(createAccessoryBar(), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(48)
+                dp(TERMINAL_KEYS_HEIGHT_DP)
         ));
         terminalScroll.post(() -> {
             resizeTerminalToViewport(false);
@@ -1325,12 +1327,18 @@ public final class MainActivity extends Activity {
         inputField.setCursorVisible(true);
         inputField.setFocusableInTouchMode(true);
         inputField.setGravity(Gravity.TOP | Gravity.START);
-        inputField.setImeOptions(EditorInfo.IME_ACTION_NONE);
+        inputField.setImeOptions(EditorInfo.IME_ACTION_SEND | EditorInfo.IME_FLAG_NO_EXTRACT_UI);
         inputField.setInputType(InputType.TYPE_CLASS_TEXT
                 | InputType.TYPE_TEXT_FLAG_MULTI_LINE
                 | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         styleComposerInput(inputField);
         inputField.setOnEditorActionListener((view, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_SEND
+                    || actionId == EditorInfo.IME_ACTION_GO
+                    || actionId == EditorInfo.IME_ACTION_DONE) {
+                sendLine();
+                return true;
+            }
             if (event != null
                     && event.getKeyCode() == KeyEvent.KEYCODE_ENTER
                     && event.isShiftPressed()
@@ -1903,19 +1911,39 @@ public final class MainActivity extends Activity {
         scroller.setHorizontalScrollBarEnabled(false);
         scroller.setBackgroundColor(Color.rgb(22, 27, 34));
 
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(6), dp(4), dp(6), dp(4));
-        addAccessoryButton(row, "<", view -> setTerminalKeyPage(terminalKeyPage - 1));
-        addPageLabel(row);
-        addAccessoryPageKeys(row);
-        addAccessoryButton(row, ">", view -> setTerminalKeyPage(terminalKeyPage + 1));
-        scroller.addView(row, new HorizontalScrollView.LayoutParams(
+        LinearLayout pad = new LinearLayout(this);
+        pad.setOrientation(LinearLayout.VERTICAL);
+        pad.setPadding(dp(5), dp(4), dp(5), dp(4));
+
+        LinearLayout firstRow = terminalKeyRow();
+        LinearLayout secondRow = terminalKeyRow();
+        addAccessoryButton(firstRow, "<", view -> setTerminalKeyPage(terminalKeyPage - 1));
+        addPageLabel(firstRow);
+        addAccessoryPageKeys(firstRow, secondRow);
+        addAccessoryButton(firstRow, ">", view -> setTerminalKeyPage(terminalKeyPage + 1));
+        pad.addView(firstRow, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                0,
+                1
+        ));
+        pad.addView(secondRow, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                0,
+                1
+        ));
+
+        scroller.addView(pad, new HorizontalScrollView.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
         ));
         return scroller;
+    }
+
+    private LinearLayout terminalKeyRow() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        return row;
     }
 
     private void addPageLabel(LinearLayout row) {
@@ -1925,62 +1953,64 @@ public final class MainActivity extends Activity {
         label.setTextSize(11);
         label.setGravity(Gravity.CENTER);
         label.setTypeface(Typeface.DEFAULT_BOLD);
-        row.addView(label, new LinearLayout.LayoutParams(dp(58), ViewGroup.LayoutParams.MATCH_PARENT));
+        row.addView(label, new LinearLayout.LayoutParams(dp(44), ViewGroup.LayoutParams.MATCH_PARENT));
     }
 
-    private void addAccessoryPageKeys(LinearLayout row) {
+    private void addAccessoryPageKeys(LinearLayout topRow, LinearLayout bottomRow) {
         switch (terminalKeyPage) {
             case 1:
-                addSoftKey(row, "Esc", "\u001b");
-                addSoftKey(row, "Tab", "\t");
-                addSoftKey(row, "^C", "\u0003");
-                addSoftKey(row, "^D", "\u0004");
-                addSoftKey(row, "^L", "\u000c");
-                addSoftKey(row, "^R", "\u0012");
-                addSoftKey(row, "^A", "\u0001");
-                addSoftKey(row, "^E", "\u0005");
+                addSoftKey(topRow, "Esc", "\u001b");
+                addSoftKey(topRow, "Tab", "\t");
+                addSoftKey(topRow, "^C", "\u0003");
+                addSoftKey(topRow, "^D", "\u0004");
+                addSoftKey(topRow, "^L", "\u000c");
+                addSoftKey(bottomRow, "^R", "\u0012");
+                addSoftKey(bottomRow, "^A", "\u0001");
+                addSoftKey(bottomRow, "^E", "\u0005");
+                addSoftKey(bottomRow, "^U", "\u0015");
+                addSoftKey(bottomRow, "^K", "\u000b");
                 break;
             case 2:
-                addSoftKey(row, "Left", "\u001b[D");
-                addSoftKey(row, "Right", "\u001b[C");
-                addSoftKey(row, "Up", "\u001b[A");
-                addSoftKey(row, "Down", "\u001b[B");
-                addSoftKey(row, "Home", "\u001b[H");
-                addSoftKey(row, "End", "\u001b[F");
-                addSoftKey(row, "PgUp", "\u001b[5~");
-                addSoftKey(row, "PgDn", "\u001b[6~");
-                addSoftKey(row, "Tmux", "\u0002");
-                addSoftKey(row, "Detach", "\u0002d");
-                addSoftKey(row, "New", "\u0002c");
-                addSoftKey(row, "Prev", "\u0002p");
-                addSoftKey(row, "Next", "\u0002n");
+                addSoftKey(topRow, "←", "\u001b[D");
+                addSoftKey(topRow, "→", "\u001b[C");
+                addSoftKey(topRow, "↑", "\u001b[A");
+                addSoftKey(topRow, "↓", "\u001b[B");
+                addSoftKey(topRow, "Home", "\u001b[H");
+                addSoftKey(bottomRow, "End", "\u001b[F");
+                addSoftKey(bottomRow, "PgUp", "\u001b[5~");
+                addSoftKey(bottomRow, "PgDn", "\u001b[6~");
+                addSoftKey(bottomRow, "Tmux", "\u0002");
+                addSoftKey(bottomRow, "Detach", "\u0002d");
+                addSoftKey(bottomRow, "New", "\u0002c");
+                addSoftKey(bottomRow, "Prev", "\u0002p");
+                addSoftKey(bottomRow, "Next", "\u0002n");
                 break;
             case 3:
-                addTextKey(row, "/", "/");
-                addTextKey(row, "-", "-");
-                addTextKey(row, "_", "_");
-                addTextKey(row, ".", ".");
-                addTextKey(row, "~", "~");
-                addTextKey(row, "|", "|");
-                addTextKey(row, "&", "&");
-                addTextKey(row, ";", ";");
-                addTextKey(row, "$", "$");
-                addTextKey(row, "Space", " ");
+                addTextKey(topRow, "/", "/");
+                addTextKey(topRow, "-", "-");
+                addTextKey(topRow, "_", "_");
+                addTextKey(topRow, ".", ".");
+                addTextKey(topRow, "~", "~");
+                addTextKey(bottomRow, "|", "|");
+                addTextKey(bottomRow, "&", "&");
+                addTextKey(bottomRow, ";", ";");
+                addTextKey(bottomRow, "$", "$");
+                addTextKey(bottomRow, "Space", " ");
                 break;
             case 0:
             default:
-                addComposerButton(row, "Left", () -> moveComposerCursor(-1));
-                addComposerButton(row, "Right", () -> moveComposerCursor(1));
-                addSoftKey(row, "Up", "\u001b[A");
-                addSoftKey(row, "Down", "\u001b[B");
-                addSoftKey(row, "Enter", "\r");
-                addAccessoryButton(row, "NL", view -> insertComposerText("\n"));
-                addSoftButton(row, "Paste", view -> pasteClipboard());
-                addAccessoryButton(row, "Back", view -> backspaceComposerText());
-                addAccessoryButton(row, "Kbd", view -> showKeyboard());
-                addAccessoryButton(row, "Hide", view -> hideKeyboard());
-                addAccessoryButton(row, "Bottom", view -> scrollTerminalBottom());
-                addAccessoryButton(row, "Select", view -> toggleTerminalSelection());
+                addComposerButton(topRow, "←", () -> moveComposerCursor(-1));
+                addComposerButton(topRow, "→", () -> moveComposerCursor(1));
+                addSoftKey(topRow, "↑", "\u001b[A");
+                addSoftKey(topRow, "↓", "\u001b[B");
+                addSoftKey(topRow, "Enter", TERMINAL_ENTER);
+                addAccessoryButton(topRow, "NL", view -> insertComposerText("\n"));
+                addSoftButton(bottomRow, "Paste", view -> pasteClipboard());
+                addAccessoryButton(bottomRow, "Back", view -> backspaceComposerText());
+                addAccessoryButton(bottomRow, "Kbd", view -> showKeyboard());
+                addAccessoryButton(bottomRow, "Hide", view -> hideKeyboard());
+                addAccessoryButton(bottomRow, "Bottom", view -> scrollTerminalBottom());
+                addAccessoryButton(bottomRow, "Select", view -> toggleTerminalSelection());
                 break;
         }
     }
@@ -2081,17 +2111,16 @@ public final class MainActivity extends Activity {
         }
         String text = inputField.getText().toString();
         if (text.isEmpty()) {
-            sendTerminalInput("\r");
+            sendTerminalInput(TERMINAL_ENTER);
             return;
         }
-        String normalized = text.replace("\r\n", "\n").replace('\r', '\n').replace('\n', '\r');
-        if (!normalized.endsWith("\r")) {
-            normalized = normalized + "\r";
+        String normalized = text.replace("\r\n", "\n").replace('\r', '\n');
+        if (!normalized.endsWith(TERMINAL_ENTER)) {
+            normalized = normalized + TERMINAL_ENTER;
         }
         terminalFollowOutput = true;
         sendTerminalInput(normalized);
         inputField.setText("");
-        hideKeyboard();
         setStatus("Sent " + text.length() + " chars");
     }
 
@@ -2238,7 +2267,7 @@ public final class MainActivity extends Activity {
         root.removeViewAt(composerIndex + 1);
         root.addView(createAccessoryBar(), composerIndex + 1, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(48)
+                dp(TERMINAL_KEYS_HEIGHT_DP)
         ));
     }
 
@@ -2431,14 +2460,24 @@ public final class MainActivity extends Activity {
 
     private void addSoftButton(LinearLayout row, String label, View.OnClickListener listener) {
         Button button = toolbarButton(label, listener);
-        button.setTextSize(11);
-        button.setPadding(dp(8), 0, dp(8), 0);
-        button.setMinWidth(dp("Space".equals(label) ? 72 : 50));
-        button.setMinimumWidth(dp("Space".equals(label) ? 72 : 50));
-        row.addView(button, new LinearLayout.LayoutParams(
+        button.setTextSize(isArrowLabel(label) ? 17 : 10);
+        button.setPadding(dp(5), 0, dp(5), 0);
+        int width = "Space".equals(label) ? 64 : (isArrowLabel(label) ? 38 : 44);
+        button.setMinWidth(dp(width));
+        button.setMinimumWidth(dp(width));
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
-        ));
+        );
+        params.leftMargin = dp(2);
+        params.rightMargin = dp(2);
+        params.topMargin = dp(1);
+        params.bottomMargin = dp(1);
+        row.addView(button, params);
+    }
+
+    private boolean isArrowLabel(String label) {
+        return "←".equals(label) || "→".equals(label) || "↑".equals(label) || "↓".equals(label);
     }
 
     private TextView bodyText(String text) {
