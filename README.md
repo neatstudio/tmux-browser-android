@@ -88,31 +88,32 @@ base64 -w 0 tmux-android-release.jks
 Branch builds and manual workflow runs create Actions artifacts only. Use them
 to verify grouped changes before publishing.
 
-Publish a release build by pushing a `v*` tag. A tag should be reserved for a
-coherent feature/test batch, not every small UI or text change. Tag publishing
-creates a GitHub Release with:
+Gitea is the primary build and update channel. Normal `main` pushes run the
+Gitea Android workflow for compile checks, while GitHub no longer builds every
+main push. Publish a release build by pushing a `v*` tag after a coherent
+feature/test batch, not every small UI or text change.
+
+Tag publishing can create GitHub Release assets with:
 
 ```text
 https://github.com/neatstudio/tmux-browser-android/releases/latest/download/tmux-android.apk
 https://github.com/neatstudio/tmux-browser-android/releases/latest/download/latest.json
 ```
 
-Gitea is the app's default install/update channel because phones may not be able
-to reach GitHub reliably. GitHub remains an optional public source. This Gitea
-instance does not support the GitHub-style `/releases/latest/download/...` URL,
-so the app uses the Gitea Release API as the stable Gitea update entrypoint.
+Gitea is also the app's default install/update channel because phones may not be
+able to reach GitHub reliably. GitHub remains an optional public source. This
+Gitea instance does not support the GitHub-style
+`/releases/latest/download/...` URL, so the app uses the Gitea Release API as
+the stable Gitea update entrypoint.
 
-Release APKs must be identical on GitHub and Gitea. The canonical APK is the
-GitHub Release asset built by `.github/workflows/android.yml`; publish to Gitea
-by mirroring that same `tmux-android.apk` byte-for-byte and uploading a
-Gitea-specific `latest.json` whose `apkUrl` points at the Gitea asset but whose
-`versionCode`, `versionName`, and `sha256` match the GitHub manifest. Do not use
-a separately built Gitea APK as a release asset unless it is proven to have the
-same SHA-256 as the GitHub APK. This keeps Android signatures and update
-compatibility identical no matter which platform the phone can reach.
+Release APKs on GitHub and Gitea should either be the exact same file or be
+built from the same tag with the same signing keystore, `versionCode`, and
+`versionName`. The Gitea workflow publishes release assets only when signing
+secrets are present. Unsigned Gitea builds remain compile checks and must not be
+used for automatic in-place updates.
 
-Plain branch builds only create Actions artifacts; they are useful for CI
-verification, but releases are the stable download/update channel.
+Plain branch builds are useful for CI verification, but releases are the stable
+download/update channel.
 
 Unsigned/debug workflow artifacts are useful only for smoke testing install and
 launch. Automatic in-place updates require release APKs signed with the same
@@ -123,18 +124,16 @@ incompatible package.
 
 The terminal screen connects to `/ws/terminal` and sends the upstream protocol
 messages unchanged: `attach`, `input`, `resize`, `scroll`, and `clear-history`.
-The first Android UI renders terminal output as monospace text with basic ANSI
-SGR color support. The terminal view stays bottom-aligned when output is short,
-auto-scrolls as data arrives, and adjusts its bottom inset when the soft keyboard
-opens. Rendering is throttled and the local terminal buffer is capped so opening
-busy sessions does not block the UI thread. Input typed before the terminal
-attach message is sent is queued and flushed after the WebSocket client is ready.
-It is enough for shell-oriented remote testing, but it is not yet a complete
-xterm-compatible renderer for full-screen TUIs such as `vim` or `top`.
+The Android UI renders terminal output through a lightweight screen buffer with
+cursor movement, line clearing, screen clearing, basic ANSI SGR color support,
+and throttled redraws. It is enough for shell-oriented remote testing, but it is
+not yet a complete xterm-compatible renderer for full-screen TUIs such as `vim`
+or `top`.
 
-The terminal toolbar and shortcut row include tmux prefix helpers. The app sends
-the same control bytes a keyboard would send, for example `Ctrl+B`, `Ctrl+B d`,
-`Ctrl+B c`, `Ctrl+B n`, and `Ctrl+B p`.
+The terminal input area is a native multi-line composer with a paged accessory
+bar for editing keys, control keys, tmux prefix helpers, navigation keys, and
+common shell symbols. The app sends the same control bytes a keyboard would
+send, for example `Ctrl+B`, `Ctrl+B d`, `Ctrl+B c`, `Ctrl+B n`, and `Ctrl+B p`.
 
 All app features are native Android controls. Complex server objects such as
 preferences, timeline events, group messages, and image metadata currently use

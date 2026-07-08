@@ -1,4 +1,4 @@
-name: Gitea Android Compile Check
+name: Gitea Android APK
 
 on: [push]
 
@@ -6,9 +6,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Compile Android APK
+      - name: Build Android APK
         env:
           CLONE_TOKEN: ${{ secrets.TMUX_GITEA_TOKEN }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set -eu
 
@@ -26,8 +30,12 @@ jobs:
           rm -rf "${WORKDIR}"
           SERVER_URL="${GITHUB_SERVER_URL:-https://gitea.neatcn.com}"
           REPOSITORY="${GITHUB_REPOSITORY:-tmux/tmux-browser-android}"
-          AUTH_SERVER_URL="$(printf '%s' "${SERVER_URL}" | sed "s#https://#https://gouki:${CLONE_TOKEN}@#")"
-          git clone "${AUTH_SERVER_URL}/${REPOSITORY}.git" "${WORKDIR}"
+          if [ -n "${CLONE_TOKEN:-}" ]; then
+            AUTH_SERVER_URL="$(printf '%s' "${SERVER_URL}" | sed "s#https://#https://gouki:${CLONE_TOKEN}@#")"
+            git clone "${AUTH_SERVER_URL}/${REPOSITORY}.git" "${WORKDIR}"
+          else
+            git clone "${SERVER_URL}/${REPOSITORY}.git" "${WORKDIR}"
+          fi
           cd "${WORKDIR}"
           git checkout "${GITHUB_SHA:-main}"
 
@@ -53,17 +61,105 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
 
-          VERSION_NAME="0.1.${GITHUB_RUN_NUMBER:-0}"
-          VERSION_CODE=$((2000 + ${GITHUB_RUN_NUMBER:-0}))
-          gradle :app:assembleDebug \
+          REF="${GITHUB_REF:-}"
+          REF_NAME="${GITHUB_REF_NAME:-}"
+          if [ -z "${REF_NAME}" ]; then
+            REF_NAME="${REF##*/}"
+          fi
+          PUBLISH_RELEASE=0
+          if [ "${REF#refs/tags/v}" != "${REF}" ]; then
+            PUBLISH_RELEASE=1
+            VERSION_NAME="${REF_NAME#v}"
+            MAJOR="$(printf '%s' "${VERSION_NAME}" | cut -d. -f1)"
+            MINOR="$(printf '%s' "${VERSION_NAME}" | cut -d. -f2)"
+            PATCH="$(printf '%s' "${VERSION_NAME}" | cut -d. -f3)"
+            VERSION_CODE=$((MAJOR * 1000000 + MINOR * 1000 + PATCH))
+          else
+            VERSION_NAME="0.1.${GITHUB_RUN_NUMBER:-0}"
+            VERSION_CODE=$((3000 + ${GITHUB_RUN_NUMBER:-0}))
+          fi
+
+          SIGNED=false
+          if [ -n "${ANDROID_KEYSTORE_BASE64:-}" ]; then
+            echo "${ANDROID_KEYSTORE_BASE64}" | base64 -d > release.jks
+            {
+              echo "storeFile=release.jks"
+              echo "storePassword=${ANDROID_KEYSTORE_PASSWORD}"
+              echo "keyAlias=${ANDROID_KEY_ALIAS}"
+              echo "keyPassword=${ANDROID_KEY_PASSWORD}"
+            } > signing.properties
+            SIGNED=true
+          fi
+
+          if [ "${PUBLISH_RELEASE}" = "1" ] && [ "${SIGNED}" != "true" ]; then
+            echo "Gitea release publishing requires ANDROID_KEYSTORE_BASE64 and signing secrets." >&2
+            exit 1
+          fi
+          if [ "${PUBLISH_RELEASE}" = "1" ] && [ -z "${CLONE_TOKEN:-}" ]; then
+            echo "Gitea release publishing requires TMUX_GITEA_TOKEN." >&2
+            exit 1
+          fi
+
+          if [ "${SIGNED}" = "true" ]; then
+            BUILD_TASK=":app:assembleRelease"
+          else
+            BUILD_TASK=":app:assembleDebug"
+          fi
+          gradle "${BUILD_TASK}" \
             -PversionCode="${VERSION_CODE}" \
             -PversionName="${VERSION_NAME}" \
             -PrepoSlug="neatstudio/tmux-browser-android"
 
           mkdir -p release
           APK_PATH="$(find app/build/outputs/apk -name '*.apk' | sort | tail -n 1)"
-          cp "${APK_PATH}" release/tmux-android-gitea-compile-check.apk
-          ls -lh release/tmux-android-gitea-compile-check.apk
-          sha256sum release/tmux-android-gitea-compile-check.apk
-          echo "Gitea-built APK is a compile check only."
-          echo "Do not publish it as a release asset; release APKs are GitHub-built and mirrored byte-for-byte to Gitea."
+          cp "${APK_PATH}" release/tmux-android.apk
+          cp "${APK_PATH}" "release/tmux-android-${VERSION_NAME}.apk"
+          SHA256="$(sha256sum release/tmux-android.apk | awk '{print $1}')"
+          TAG="v${VERSION_NAME}"
+          APK_URL="https://gitea.neatcn.com/tmux/tmux-browser-android/releases/download/${TAG}/tmux-android.apk"
+          RELEASE_PAGE_URL="https://gitea.neatcn.com/tmux/tmux-browser-android/releases/tag/${TAG}"
+          cat > release/latest.json << JSON
+          {
+            "versionCode": ${VERSION_CODE},
+            "versionName": "${VERSION_NAME}",
+            "apkUrl": "${APK_URL}",
+            "sha256": "${SHA256}",
+            "releasePageUrl": "${RELEASE_PAGE_URL}",
+            "minSdk": 26
+          }
+          JSON
+          ls -lh release/tmux-android.apk release/latest.json
+          sha256sum release/tmux-android.apk
+
+          if [ "${PUBLISH_RELEASE}" != "1" ]; then
+            echo "Gitea main build completed as compile check."
+            exit 0
+          fi
+
+          API_ROOT="https://gitea.neatcn.com/api/v1/repos/tmux/tmux-browser-android"
+          RELEASE_BODY='{"tag_name":"'"${TAG}"'","target_commitish":"main","name":"tmux Android '"${VERSION_NAME}"'","body":"Android APK for tmux-ui remote testing.","draft":false,"prerelease":false}'
+          if ! curl -fsSL -X POST \
+            -H "Authorization: token ${CLONE_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "${RELEASE_BODY}" \
+            "${API_ROOT}/releases" \
+            -o /tmp/gitea-release.json; then
+            curl -fsSL -H "Authorization: token ${CLONE_TOKEN}" \
+              "${API_ROOT}/releases/tags/${TAG}" \
+              -o /tmp/gitea-release.json
+          fi
+          RELEASE_ID="$(sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p' /tmp/gitea-release.json | head -1)"
+          if [ -z "${RELEASE_ID}" ]; then
+            echo "Cannot resolve Gitea release id." >&2
+            cat /tmp/gitea-release.json >&2
+            exit 1
+          fi
+          curl -fsSL -X POST -H "Authorization: token ${CLONE_TOKEN}" \
+            -F "attachment=@release/tmux-android.apk;type=application/vnd.android.package-archive" \
+            "${API_ROOT}/releases/${RELEASE_ID}/assets?name=tmux-android.apk" \
+            -o /tmp/gitea-apk-asset.json
+          curl -fsSL -X POST -H "Authorization: token ${CLONE_TOKEN}" \
+            -F "attachment=@release/latest.json;type=application/json" \
+            "${API_ROOT}/releases/${RELEASE_ID}/assets?name=latest.json" \
+            -o /tmp/gitea-latest-asset.json
+          echo "Published Gitea release ${TAG}."
