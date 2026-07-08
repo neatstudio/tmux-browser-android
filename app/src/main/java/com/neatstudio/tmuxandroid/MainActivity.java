@@ -65,6 +65,23 @@ public final class MainActivity extends Activity {
     private static final int STATUS_SUCCESS = 2;
     private static final int STATUS_ERROR = 3;
     private static final long TERMINAL_RENDER_INTERVAL_MS = 80L;
+    private static final int COLOR_APP_BG = Color.rgb(9, 11, 13);
+    private static final int COLOR_BAR = Color.rgb(15, 18, 21);
+    private static final int COLOR_PANEL = Color.rgb(22, 26, 30);
+    private static final int COLOR_CARD = Color.rgb(26, 31, 36);
+    private static final int COLOR_CARD_ALT = Color.rgb(31, 37, 43);
+    private static final int COLOR_FIELD = Color.rgb(12, 15, 18);
+    private static final int COLOR_TERMINAL_BG = Color.rgb(2, 4, 6);
+    private static final int COLOR_BORDER = Color.rgb(55, 64, 72);
+    private static final int COLOR_BORDER_SOFT = Color.rgb(39, 46, 53);
+    private static final int COLOR_TEXT = Color.rgb(238, 242, 246);
+    private static final int COLOR_TEXT_MUTED = Color.rgb(151, 163, 174);
+    private static final int COLOR_TEXT_DIM = Color.rgb(112, 124, 136);
+    private static final int COLOR_ACCENT = Color.rgb(65, 218, 199);
+    private static final int COLOR_ACCENT_DARK = Color.rgb(13, 61, 55);
+    private static final int COLOR_ACCENT_WARM = Color.rgb(243, 185, 82);
+    private static final int COLOR_SUCCESS = Color.rgb(91, 213, 139);
+    private static final int COLOR_DANGER = Color.rgb(235, 103, 111);
     private static final String OLD_LOCAL_DEFAULT_URL = "http://127.0.0.1:3000";
     private static final String OLD_GITHUB_DEFAULT_UPDATE_URL = "https://github.com/neatstudio/tmux-browser-android/releases/latest/download/latest.json";
     private static final String DEFAULT_TAILSCALE_URL = "http://100.89.0.116:3000";
@@ -134,8 +151,8 @@ public final class MainActivity extends Activity {
         }
         migrateDefaultUpdateSourceToGitea();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            getWindow().setStatusBarColor(Color.rgb(17, 20, 24));
-            getWindow().setNavigationBarColor(Color.rgb(17, 20, 24));
+            getWindow().setStatusBarColor(COLOR_APP_BG);
+            getWindow().setNavigationBarColor(COLOR_APP_BG);
         }
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING);
         api = new SessionApiClient(getServerUrl());
@@ -159,17 +176,17 @@ public final class MainActivity extends Activity {
     private View createRoot() {
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.rgb(17, 20, 24));
+        root.setBackgroundColor(COLOR_APP_BG);
 
         progressBar = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progressBar.setIndeterminate(true);
         progressBar.setVisibility(View.GONE);
 
         statusText = new TextView(this);
-        statusText.setTextColor(Color.rgb(210, 215, 224));
-        statusText.setTextSize(12);
+        statusText.setTextColor(COLOR_TEXT_MUTED);
+        statusText.setTextSize(11);
         statusText.setGravity(Gravity.CENTER_VERTICAL);
-        statusText.setPadding(dp(10), 0, dp(10), 0);
+        statusText.setPadding(dp(12), 0, dp(12), 0);
         statusText.setSingleLine(true);
         setStatus("Ready");
         applySystemBarInsets(root);
@@ -248,12 +265,12 @@ public final class MainActivity extends Activity {
         String label = url.replace("http://", "").replace(":3000", "");
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(12), dp(11), dp(12), dp(11));
-        card.setBackground(rounded(Color.rgb(27, 33, 40), 8, Color.rgb(45, 54, 64), 1));
+        card.setPadding(dp(12), dp(10), dp(12), dp(10));
+        card.setBackground(cardBackground());
 
         TextView title = new TextView(this);
         title.setText(label);
-        title.setTextColor(Color.WHITE);
+        title.setTextColor(COLOR_TEXT);
         title.setTextSize(16);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         TextView meta = bodyText(url);
@@ -570,7 +587,7 @@ public final class MainActivity extends Activity {
         LinearLayout toolbar = new LinearLayout(this);
         toolbar.setOrientation(LinearLayout.VERTICAL);
         toolbar.setPadding(dp(8), dp(6), dp(8), dp(6));
-        toolbar.setBackgroundColor(Color.rgb(17, 20, 24));
+        toolbar.setBackgroundColor(COLOR_BAR);
 
         LinearLayout urlRow = new LinearLayout(this);
         urlRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -578,8 +595,8 @@ public final class MainActivity extends Activity {
 
         urlField = new EditText(this);
         urlField.setSingleLine(true);
-        urlField.setTextColor(Color.WHITE);
-        urlField.setHintTextColor(Color.rgb(150, 158, 168));
+        urlField.setTextColor(COLOR_TEXT);
+        urlField.setHintTextColor(COLOR_TEXT_DIM);
         urlField.setTextSize(14);
         urlField.setInputType(InputType.TYPE_TEXT_VARIATION_URI);
         urlField.setImeOptions(EditorInfo.IME_ACTION_GO);
@@ -645,7 +662,7 @@ public final class MainActivity extends Activity {
     private HorizontalScrollView createServerProfileBar() {
         HorizontalScrollView scroller = new HorizontalScrollView(this);
         scroller.setHorizontalScrollBarEnabled(false);
-        scroller.setBackgroundColor(Color.rgb(22, 27, 34));
+        scroller.setBackgroundColor(COLOR_BAR);
 
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -677,12 +694,12 @@ public final class MainActivity extends Activity {
     private HorizontalScrollView createMainTabs(String selected) {
         HorizontalScrollView scroller = new HorizontalScrollView(this);
         scroller.setHorizontalScrollBarEnabled(false);
-        scroller.setBackgroundColor(Color.rgb(17, 20, 24));
+        scroller.setBackgroundColor(COLOR_APP_BG);
 
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(8), dp(4), dp(8), dp(4));
+        row.setPadding(dp(8), dp(5), dp(8), dp(5));
         row.addView(navButton(PAGE_SERVERS, selected, view -> renderServerScreen()));
         row.addView(navButton(PAGE_SESSIONS, selected, view -> openSessionPage()));
         row.addView(navButton(PAGE_PROJECTS, selected, view -> renderProjectsScreen()));
@@ -700,26 +717,26 @@ public final class MainActivity extends Activity {
     private Button navButton(String label, String selected, View.OnClickListener listener) {
         Button button = toolbarButton(label, listener);
         boolean active = label.equals(selected);
-        button.setTextColor(active ? Color.rgb(8, 12, 18) : Color.rgb(235, 241, 248));
+        button.setTextColor(active ? Color.rgb(5, 18, 18) : COLOR_TEXT);
         button.setBackground(active
-                ? rounded(Color.rgb(86, 211, 219), 8, Color.rgb(86, 211, 219), 1)
+                ? rounded(COLOR_ACCENT, 8, COLOR_ACCENT, 1)
                 : buttonBackground());
-        button.setMinWidth(dp(82));
-        button.setMinimumWidth(dp(82));
+        button.setMinWidth(dp(74));
+        button.setMinimumWidth(dp(74));
         return button;
     }
 
     private LinearLayout pageContent() {
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(10), dp(10), dp(10), dp(14));
+        content.setPadding(dp(10), dp(9), dp(10), dp(14));
         return content;
     }
 
     private TextView sectionTitle(String text) {
         TextView title = new TextView(this);
         title.setText(text);
-        title.setTextColor(Color.rgb(139, 148, 158));
+        title.setTextColor(COLOR_ACCENT_WARM);
         title.setTextSize(12);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setPadding(dp(2), dp(12), dp(2), dp(6));
@@ -730,11 +747,11 @@ public final class MainActivity extends Activity {
         LinearLayout block = new LinearLayout(this);
         block.setOrientation(LinearLayout.VERTICAL);
         block.setPadding(dp(12), dp(10), dp(12), dp(10));
-        block.setBackground(rounded(Color.rgb(27, 33, 40), 8, Color.rgb(45, 54, 64), 1));
+        block.setBackground(cardBackground());
 
         TextView heading = new TextView(this);
         heading.setText(title);
-        heading.setTextColor(Color.WHITE);
+        heading.setTextColor(COLOR_TEXT);
         heading.setTextSize(16);
         heading.setTypeface(Typeface.DEFAULT_BOLD);
 
@@ -766,8 +783,8 @@ public final class MainActivity extends Activity {
     private LinearLayout actionPanel(Button... buttons) {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(7), dp(7), dp(7), dp(2));
-        panel.setBackground(rounded(Color.rgb(24, 30, 37), 8, Color.rgb(42, 51, 61), 1));
+        panel.setPadding(dp(6), dp(6), dp(6), dp(1));
+        panel.setBackground(panelBackground());
         LinearLayout row = null;
         for (int index = 0; index < buttons.length; index++) {
             if (index % 2 == 0) {
@@ -775,7 +792,7 @@ public final class MainActivity extends Activity {
                 row.setOrientation(LinearLayout.HORIZONTAL);
                 panel.addView(row, matchWrap());
             }
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(42), 1);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(38), 1);
             params.leftMargin = dp(3);
             params.rightMargin = dp(3);
             params.bottomMargin = dp(6);
@@ -895,7 +912,7 @@ public final class MainActivity extends Activity {
         view.setTypeface(Typeface.MONOSPACE);
         view.setTextIsSelectable(true);
         view.setPadding(dp(12), dp(10), dp(12), dp(10));
-        view.setBackground(rounded(Color.rgb(12, 17, 23), 8, Color.rgb(42, 51, 61), 1));
+        view.setBackground(rounded(COLOR_FIELD, 8, COLOR_BORDER_SOFT, 1));
         return view;
     }
 
@@ -908,12 +925,12 @@ public final class MainActivity extends Activity {
 
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(12), dp(11), dp(12), dp(11));
-        card.setBackground(rounded(Color.rgb(27, 33, 40), 8, Color.rgb(45, 54, 64), 1));
+        card.setPadding(dp(12), dp(10), dp(12), dp(10));
+        card.setBackground(cardBackground());
 
         TextView title = new TextView(this);
         title.setText(name);
-        title.setTextColor(Color.WHITE);
+        title.setTextColor(COLOR_TEXT);
         title.setTextSize(17);
         title.setTypeface(Typeface.DEFAULT_BOLD);
 
@@ -935,7 +952,7 @@ public final class MainActivity extends Activity {
 
         if (agents != null && agents.length() > 0) {
             TextView agentsTitle = bodyText("Agents");
-            agentsTitle.setTextColor(Color.rgb(139, 148, 158));
+            agentsTitle.setTextColor(COLOR_TEXT_DIM);
             agentsTitle.setTypeface(Typeface.DEFAULT_BOLD);
             agentsTitle.setPadding(0, dp(10), 0, dp(4));
             card.addView(agentsTitle);
@@ -1000,15 +1017,15 @@ public final class MainActivity extends Activity {
     private View sessionRow(SessionSummary session) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.VERTICAL);
-        row.setPadding(dp(12), dp(11), dp(12), dp(11));
-        row.setBackground(rounded(Color.rgb(27, 33, 40), 8, Color.rgb(45, 54, 64), 1));
+        row.setPadding(dp(12), dp(10), dp(12), dp(10));
+        row.setBackground(cardBackground());
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             row.setElevation(dp(1));
         }
 
         TextView title = new TextView(this);
         title.setText(session.name);
-        title.setTextColor(Color.WHITE);
+        title.setTextColor(COLOR_TEXT);
         title.setTextSize(17);
         title.setTypeface(Typeface.DEFAULT_BOLD);
 
@@ -1110,9 +1127,9 @@ public final class MainActivity extends Activity {
 
         terminalScroll = new ScrollView(this);
         terminalScroll.setFillViewport(true);
-        terminalScroll.setBackgroundColor(Color.rgb(4, 7, 10));
+        terminalScroll.setBackgroundColor(COLOR_TERMINAL_BG);
         terminalText = new TextView(this);
-        terminalText.setTextColor(Color.rgb(230, 235, 242));
+        terminalText.setTextColor(COLOR_TEXT);
         terminalText.setTextSize(13);
         terminalText.setTypeface(Typeface.MONOSPACE);
         terminalText.setIncludeFontPadding(false);
@@ -1120,7 +1137,7 @@ public final class MainActivity extends Activity {
         terminalText.setGravity(Gravity.BOTTOM | Gravity.START);
         terminalText.setTextIsSelectable(terminalSelectionEnabled);
         terminalText.setPadding(dp(10), dp(10), dp(10), dp(10));
-        terminalText.setBackgroundColor(Color.rgb(4, 7, 10));
+        terminalText.setBackgroundColor(COLOR_TERMINAL_BG);
         terminalScroll.addView(terminalText, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
@@ -1160,11 +1177,11 @@ public final class MainActivity extends Activity {
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.setPadding(dp(5), dp(5), dp(5), dp(5));
-        bar.setBackgroundColor(Color.rgb(17, 20, 24));
+        bar.setBackgroundColor(COLOR_BAR);
         bar.addView(terminalToolButton("‹", view -> openSessionPage()));
         TextView title = new TextView(this);
         title.setText(sessionName);
-        title.setTextColor(Color.WHITE);
+        title.setTextColor(COLOR_TEXT);
         title.setTextSize(15);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setSingleLine(true);
@@ -1178,7 +1195,7 @@ public final class MainActivity extends Activity {
     private HorizontalScrollView createTerminalGroupBar() {
         HorizontalScrollView scroller = new HorizontalScrollView(this);
         scroller.setHorizontalScrollBarEnabled(false);
-        scroller.setBackgroundColor(Color.rgb(13, 17, 22));
+        scroller.setBackgroundColor(COLOR_PANEL);
 
         terminalGroupRow = new LinearLayout(this);
         terminalGroupRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -1268,7 +1285,7 @@ public final class MainActivity extends Activity {
     private TextView groupLabel(String text) {
         TextView label = new TextView(this);
         label.setText(text);
-        label.setTextColor(Color.rgb(139, 148, 158));
+        label.setTextColor(COLOR_TEXT_DIM);
         label.setTextSize(11);
         label.setTypeface(Typeface.DEFAULT_BOLD);
         label.setGravity(Gravity.CENTER_VERTICAL);
@@ -1283,8 +1300,8 @@ public final class MainActivity extends Activity {
             }
         });
         if (active) {
-            button.setTextColor(Color.rgb(8, 12, 18));
-            button.setBackground(rounded(Color.rgb(86, 211, 219), 7, Color.rgb(86, 211, 219), 1));
+            button.setTextColor(Color.rgb(5, 18, 18));
+            button.setBackground(rounded(COLOR_ACCENT, 7, COLOR_ACCENT, 1));
         }
         return button;
     }
@@ -1433,15 +1450,15 @@ public final class MainActivity extends Activity {
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.VERTICAL);
         bar.setPadding(dp(8), dp(5), dp(8), dp(6));
-        bar.setBackgroundColor(Color.rgb(17, 20, 24));
+        bar.setBackgroundColor(COLOR_BAR);
 
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.BOTTOM);
 
         inputField = new EditText(this);
-        inputField.setTextColor(Color.WHITE);
-        inputField.setHintTextColor(Color.rgb(150, 158, 168));
+        inputField.setTextColor(COLOR_TEXT);
+        inputField.setHintTextColor(COLOR_TEXT_DIM);
         inputField.setHint("type, edit, paste");
         inputField.setSingleLine(false);
         inputField.setMinLines(1);
@@ -2031,7 +2048,7 @@ public final class MainActivity extends Activity {
     private HorizontalScrollView createAccessoryBar() {
         HorizontalScrollView scroller = new HorizontalScrollView(this);
         scroller.setHorizontalScrollBarEnabled(false);
-        scroller.setBackgroundColor(Color.rgb(22, 27, 34));
+        scroller.setBackgroundColor(COLOR_PANEL);
 
         LinearLayout pad = new LinearLayout(this);
         pad.setOrientation(LinearLayout.VERTICAL);
@@ -2071,7 +2088,7 @@ public final class MainActivity extends Activity {
     private void addPageLabel(LinearLayout row) {
         TextView label = new TextView(this);
         label.setText(accessoryPageName());
-        label.setTextColor(Color.rgb(139, 148, 158));
+        label.setTextColor(COLOR_TEXT_DIM);
         label.setTextSize(11);
         label.setGravity(Gravity.CENTER);
         label.setTypeface(Typeface.DEFAULT_BOLD);
@@ -2487,16 +2504,21 @@ public final class MainActivity extends Activity {
     private Button toolbarButton(String label, View.OnClickListener listener) {
         Button button = new Button(this);
         button.setText(label);
-        button.setTextColor(Color.rgb(235, 241, 248));
-        button.setTextSize(12);
+        button.setTextColor(COLOR_TEXT);
+        button.setTextSize(11);
         button.setAllCaps(false);
         button.setTypeface(Typeface.DEFAULT_BOLD);
+        button.setIncludeFontPadding(false);
         button.setMinWidth(0);
         button.setMinimumWidth(0);
-        button.setPadding(dp(10), 0, dp(10), 0);
+        button.setPadding(dp(9), 0, dp(9), 0);
         button.setBackground(buttonBackground());
         button.setGravity(Gravity.CENTER);
         button.setHapticFeedbackEnabled(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            button.setStateListAnimator(null);
+            button.setElevation(0);
+        }
         button.setOnClickListener(view -> {
             view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
             view.animate().cancel();
@@ -2512,9 +2534,9 @@ public final class MainActivity extends Activity {
         });
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-                dp(42)
+                dp(38)
         );
-        params.leftMargin = dp(5);
+        params.leftMargin = dp(4);
         button.setLayoutParams(params);
         return button;
     }
@@ -2536,20 +2558,20 @@ public final class MainActivity extends Activity {
     }
 
     private void styleInput(EditText input) {
-        input.setTextColor(Color.rgb(240, 246, 252));
-        input.setHintTextColor(Color.rgb(139, 148, 158));
+        input.setTextColor(COLOR_TEXT);
+        input.setHintTextColor(COLOR_TEXT_DIM);
         input.setTextSize(14);
         input.setSingleLine(true);
         input.setPadding(dp(10), 0, dp(10), 0);
-        input.setBackground(rounded(Color.rgb(12, 17, 23), 8, Color.rgb(48, 58, 70), 1));
+        input.setBackground(inputBackground());
     }
 
     private void styleComposerInput(EditText input) {
-        input.setTextColor(Color.rgb(240, 246, 252));
-        input.setHintTextColor(Color.rgb(139, 148, 158));
+        input.setTextColor(COLOR_TEXT);
+        input.setHintTextColor(COLOR_TEXT_DIM);
         input.setTextSize(14);
         input.setPadding(dp(10), dp(8), dp(10), dp(8));
-        input.setBackground(rounded(Color.rgb(12, 17, 23), 8, Color.rgb(48, 58, 70), 1));
+        input.setBackground(inputBackground());
     }
 
     private Button compactButton(String label, View.OnClickListener listener) {
@@ -2563,11 +2585,23 @@ public final class MainActivity extends Activity {
 
     private StateListDrawable buttonBackground() {
         StateListDrawable states = new StateListDrawable();
-        states.addState(new int[]{-android.R.attr.state_enabled}, rounded(Color.rgb(24, 30, 37), 8, Color.rgb(35, 42, 50), 1));
-        states.addState(new int[]{android.R.attr.state_pressed}, rounded(Color.rgb(64, 78, 94), 8, Color.rgb(91, 108, 128), 1));
-        states.addState(new int[]{android.R.attr.state_focused}, rounded(Color.rgb(48, 61, 76), 8, Color.rgb(98, 128, 164), 1));
-        states.addState(new int[]{}, rounded(Color.rgb(34, 43, 53), 8, Color.rgb(55, 66, 80), 1));
+        states.addState(new int[]{-android.R.attr.state_enabled}, rounded(Color.rgb(20, 23, 27), 8, COLOR_BORDER_SOFT, 1));
+        states.addState(new int[]{android.R.attr.state_pressed}, rounded(COLOR_ACCENT_DARK, 8, COLOR_ACCENT, 1));
+        states.addState(new int[]{android.R.attr.state_focused}, rounded(Color.rgb(35, 48, 53), 8, COLOR_ACCENT, 1));
+        states.addState(new int[]{}, rounded(COLOR_CARD_ALT, 8, COLOR_BORDER, 1));
         return states;
+    }
+
+    private GradientDrawable cardBackground() {
+        return rounded(COLOR_CARD, 8, COLOR_BORDER_SOFT, 1);
+    }
+
+    private GradientDrawable panelBackground() {
+        return rounded(COLOR_PANEL, 8, COLOR_BORDER_SOFT, 1);
+    }
+
+    private GradientDrawable inputBackground() {
+        return rounded(COLOR_FIELD, 8, COLOR_BORDER, 1);
     }
 
     private GradientDrawable rounded(int color, int radiusDp, int strokeColor, int strokeDp) {
@@ -2621,7 +2655,7 @@ public final class MainActivity extends Activity {
     private TextView bodyText(String text) {
         TextView view = new TextView(this);
         view.setText(text);
-        view.setTextColor(Color.rgb(205, 213, 224));
+        view.setTextColor(COLOR_TEXT_MUTED);
         view.setTextSize(13);
         return view;
     }
@@ -2668,20 +2702,20 @@ public final class MainActivity extends Activity {
         if (statusText != null) {
             String value = message == null || message.trim().isEmpty() ? "Ready" : message.trim();
             statusText.setText(value);
-            int bg = Color.rgb(22, 27, 34);
+            int bg = COLOR_PANEL;
             int stroke = Color.TRANSPARENT;
-            int text = Color.rgb(210, 215, 224);
+            int text = COLOR_TEXT_MUTED;
             if (tone == STATUS_BUSY) {
-                bg = Color.rgb(20, 44, 68);
-                stroke = Color.rgb(44, 96, 142);
+                bg = Color.rgb(20, 42, 58);
+                stroke = COLOR_ACCENT;
                 text = Color.rgb(220, 238, 255);
             } else if (tone == STATUS_SUCCESS) {
-                bg = Color.rgb(20, 56, 40);
-                stroke = Color.rgb(42, 118, 78);
+                bg = Color.rgb(19, 55, 36);
+                stroke = COLOR_SUCCESS;
                 text = Color.rgb(218, 245, 228);
             } else if (tone == STATUS_ERROR) {
-                bg = Color.rgb(72, 28, 31);
-                stroke = Color.rgb(154, 66, 72);
+                bg = Color.rgb(72, 27, 33);
+                stroke = COLOR_DANGER;
                 text = Color.rgb(255, 226, 226);
             }
             statusText.setTextColor(text);
