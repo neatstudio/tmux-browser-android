@@ -102,6 +102,8 @@ public final class MainActivity extends Activity {
     private final StringBuilder queuedTerminalInput = new StringBuilder();
     private boolean terminalConnected;
     private boolean terminalRenderPending;
+    private boolean terminalSelectionEnabled;
+    private boolean terminalFollowOutput = true;
     private long lastTerminalRenderMs;
     private int terminalCols = DEFAULT_TERMINAL_COLS;
     private int terminalRows = DEFAULT_TERMINAL_ROWS;
@@ -173,7 +175,7 @@ public final class MainActivity extends Activity {
         view.setOnApplyWindowInsetsListener((target, insets) -> {
             int bottom = insets.getSystemWindowInsetBottom();
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                bottom = Math.max(bottom, insets.getInsets(WindowInsets.Type.ime()).bottom);
+                bottom = insets.getInsets(WindowInsets.Type.systemBars()).bottom;
             }
             target.setPadding(
                     0,
@@ -971,6 +973,8 @@ public final class MainActivity extends Activity {
         queuedTerminalInput.setLength(0);
         terminalConnected = false;
         terminalRenderPending = false;
+        terminalSelectionEnabled = false;
+        terminalFollowOutput = true;
         lastTerminalRenderMs = 0L;
         terminalCols = DEFAULT_TERMINAL_COLS;
         terminalRows = DEFAULT_TERMINAL_ROWS;
@@ -987,7 +991,7 @@ public final class MainActivity extends Activity {
         terminalText.setIncludeFontPadding(false);
         terminalText.setLineSpacing(0, 1.05f);
         terminalText.setGravity(Gravity.BOTTOM | Gravity.START);
-        terminalText.setTextIsSelectable(false);
+        terminalText.setTextIsSelectable(terminalSelectionEnabled);
         terminalText.setPadding(dp(10), dp(10), dp(10), dp(10));
         terminalText.setBackgroundColor(Color.rgb(4, 7, 10));
         terminalScroll.addView(terminalText, new ScrollView.LayoutParams(
@@ -996,6 +1000,8 @@ public final class MainActivity extends Activity {
         ));
         terminalScroll.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
                 resizeTerminalToViewport(false));
+        terminalScroll.setOnScrollChangeListener((view, scrollX, scrollY, oldScrollX, oldScrollY) ->
+                terminalFollowOutput = !view.canScrollVertically(1));
         root.addView(terminalScroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
@@ -1004,7 +1010,7 @@ public final class MainActivity extends Activity {
         root.addView(createComposerBar(), matchWrap());
         root.addView(createSoftKeyPad(), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(92)
+                dp(138)
         ));
         root.addView(statusText, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1218,15 +1224,24 @@ public final class MainActivity extends Activity {
         ));
         bar.addView(row, matchWrap());
 
+        HorizontalScrollView actionScroller = new HorizontalScrollView(this);
+        actionScroller.setHorizontalScrollBarEnabled(false);
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
         actions.setGravity(Gravity.CENTER_VERTICAL);
         actions.setPadding(0, dp(5), 0, 0);
         actions.addView(compactButton("Enter", view -> sendTerminalInput("\r")));
         actions.addView(compactButton("NL", view -> insertComposerText("\n")));
+        actions.addView(compactButton("Keyboard", view -> showKeyboard()));
         actions.addView(compactButton("Hide", view -> hideKeyboard()));
+        actions.addView(compactButton("Bottom", view -> scrollTerminalBottom()));
+        actions.addView(compactButton("Select", view -> toggleTerminalSelection()));
         actions.addView(compactButton("Clear", view -> inputField.setText("")));
-        bar.addView(actions, matchWrap());
+        actionScroller.addView(actions, new HorizontalScrollView.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        ));
+        bar.addView(actionScroller, matchWrap());
         return bar;
     }
 
@@ -1752,12 +1767,15 @@ public final class MainActivity extends Activity {
         pad.setOrientation(LinearLayout.VERTICAL);
         pad.setBackgroundColor(Color.rgb(22, 27, 34));
         pad.addView(createSoftKeyRow(
-                new String[]{"Esc", "Tab", "^C", "^D", "^L", "^R", "^A", "^E", "^V", "^Z", "^\\", "Paste"},
-                new String[]{"\u001b", "\t", "\u0003", "\u0004", "\u000c", "\u0012", "\u0001", "\u0005", "\u0016", "\u001a", "\u001c", null}
+                new String[]{"Esc", "Tab", "Ctrl+C", "Ctrl+D", "Ctrl+L", "Ctrl+R", "Ctrl+A", "Ctrl+E", "Paste"},
+                new String[]{"\u001b", "\t", "\u0003", "\u0004", "\u000c", "\u0012", "\u0001", "\u0005", null}
         ), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
         pad.addView(createSoftKeyRow(
                 new String[]{"Tmux", "Detach", "NewWin", "PrevWin", "NextWin", "Left", "Down", "Up", "Right", "PgUp", "PgDn", "Home", "End"},
                 new String[]{"\u0002", "\u0002d", "\u0002c", "\u0002p", "\u0002n", "\u001b[D", "\u001b[B", "\u001b[A", "\u001b[C", "\u001b[5~", "\u001b[6~", "\u001b[H", "\u001b[F"}
+        ), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+        pad.addView(createTextKeyRow(
+                new String[]{"/", "-", "_", ".", "~", "|", "&", ";", ":", "\"", "'", "$", "Space", "Back"}
         ), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
         return pad;
     }
@@ -1778,6 +1796,31 @@ public final class MainActivity extends Activity {
                 addSoftButton(row, label, view -> pasteClipboard());
             } else {
                 addSoftKey(row, label, sequence);
+            }
+        }
+        scroller.addView(row, new HorizontalScrollView.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+        ));
+        return scroller;
+    }
+
+    private HorizontalScrollView createTextKeyRow(String[] labels) {
+        HorizontalScrollView scroller = new HorizontalScrollView(this);
+        scroller.setHorizontalScrollBarEnabled(false);
+        scroller.setBackgroundColor(Color.rgb(22, 27, 34));
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(6), dp(4), dp(6), dp(4));
+        for (String label : labels) {
+            if ("Space".equals(label)) {
+                addTextKey(row, label, " ");
+            } else if ("Back".equals(label)) {
+                addSoftButton(row, label, view -> backspaceComposerText());
+            } else {
+                addTextKey(row, label, label);
             }
         }
         scroller.addView(row, new HorizontalScrollView.LayoutParams(
@@ -1876,6 +1919,7 @@ public final class MainActivity extends Activity {
         if (!normalized.endsWith("\r")) {
             normalized = normalized + "\r";
         }
+        terminalFollowOutput = true;
         sendTerminalInput(normalized);
         inputField.setText("");
         hideKeyboard();
@@ -1947,6 +1991,33 @@ public final class MainActivity extends Activity {
         inputField.requestFocus();
     }
 
+    private void backspaceComposerText() {
+        if (inputField == null) {
+            return;
+        }
+        int start = Math.max(0, inputField.getSelectionStart());
+        int end = Math.max(0, inputField.getSelectionEnd());
+        int from = Math.min(start, end);
+        int to = Math.max(start, end);
+        if (from != to) {
+            inputField.getText().delete(from, to);
+        } else if (from > 0) {
+            inputField.getText().delete(from - 1, from);
+        }
+        inputField.requestFocus();
+    }
+
+    private void showKeyboard() {
+        if (inputField == null) {
+            return;
+        }
+        inputField.requestFocus();
+        InputMethodManager manager = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (manager != null) {
+            manager.showSoftInput(inputField, InputMethodManager.SHOW_IMPLICIT);
+        }
+    }
+
     private void hideKeyboard() {
         if (inputField == null) {
             return;
@@ -1956,6 +2027,22 @@ public final class MainActivity extends Activity {
             manager.hideSoftInputFromWindow(inputField.getWindowToken(), 0);
         }
         inputField.clearFocus();
+    }
+
+    private void toggleTerminalSelection() {
+        terminalSelectionEnabled = !terminalSelectionEnabled;
+        if (terminalText != null) {
+            terminalText.setTextIsSelectable(terminalSelectionEnabled);
+        }
+        setStatus(terminalSelectionEnabled ? "Terminal selection on" : "Terminal selection off");
+    }
+
+    private void scrollTerminalBottom() {
+        terminalFollowOutput = true;
+        if (terminalScroll != null) {
+            terminalScroll.post(() -> terminalScroll.fullScroll(View.FOCUS_DOWN));
+        }
+        setStatus("Following terminal output");
     }
 
     private void appendTerminal(String data) {
@@ -1982,7 +2069,9 @@ public final class MainActivity extends Activity {
         }
         lastTerminalRenderMs = System.currentTimeMillis();
         terminalText.setText(terminalScreen.render());
-        terminalScroll.post(() -> terminalScroll.fullScroll(View.FOCUS_DOWN));
+        if (terminalFollowOutput) {
+            terminalScroll.post(() -> terminalScroll.fullScroll(View.FOCUS_DOWN));
+        }
     }
 
     private void saveServerAndRefresh() {
@@ -2131,10 +2220,16 @@ public final class MainActivity extends Activity {
         addSoftButton(row, label, view -> sendTerminalInput(sequence));
     }
 
+    private void addTextKey(LinearLayout row, String label, String text) {
+        addSoftButton(row, label, view -> insertComposerText(text));
+    }
+
     private void addSoftButton(LinearLayout row, String label, View.OnClickListener listener) {
         Button button = toolbarButton(label, listener);
-        button.setMinWidth(dp(50));
-        button.setMinimumWidth(dp(50));
+        button.setTextSize(11);
+        button.setPadding(dp(8), 0, dp(8), 0);
+        button.setMinWidth(dp("Space".equals(label) ? 72 : 50));
+        button.setMinimumWidth(dp("Space".equals(label) ? 72 : 50));
         row.addView(button, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
