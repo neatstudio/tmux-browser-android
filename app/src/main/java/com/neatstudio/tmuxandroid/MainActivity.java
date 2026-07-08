@@ -95,6 +95,7 @@ public final class MainActivity extends Activity {
     private TextView terminalText;
     private ScrollView terminalScroll;
     private EditText inputField;
+    private View terminalComposerBar;
     private String activeSessionName;
     private String activeMainPage = PAGE_SESSIONS;
     private String pendingImageUploadSession;
@@ -104,6 +105,7 @@ public final class MainActivity extends Activity {
     private boolean terminalRenderPending;
     private boolean terminalSelectionEnabled;
     private boolean terminalFollowOutput = true;
+    private int terminalKeyPage;
     private long lastTerminalRenderMs;
     private int terminalCols = DEFAULT_TERMINAL_COLS;
     private int terminalRows = DEFAULT_TERMINAL_ROWS;
@@ -975,6 +977,7 @@ public final class MainActivity extends Activity {
         terminalRenderPending = false;
         terminalSelectionEnabled = false;
         terminalFollowOutput = true;
+        terminalKeyPage = 0;
         lastTerminalRenderMs = 0L;
         terminalCols = DEFAULT_TERMINAL_COLS;
         terminalRows = DEFAULT_TERMINAL_ROWS;
@@ -1007,18 +1010,23 @@ public final class MainActivity extends Activity {
                 0,
                 1
         ));
-        root.addView(createComposerBar(), matchWrap());
-        root.addView(createSoftKeyPad(), new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(138)
-        ));
         root.addView(statusText, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(28)
         ));
+        terminalComposerBar = createComposerBar();
+        root.addView(terminalComposerBar, matchWrap());
+        root.addView(createAccessoryBar(), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(48)
+        ));
         terminalScroll.post(() -> {
             resizeTerminalToViewport(false);
             connectTerminal(sessionName);
+        });
+        inputField.post(() -> {
+            inputField.requestFocus();
+            hideKeyboard();
         });
     }
 
@@ -1197,10 +1205,12 @@ public final class MainActivity extends Activity {
         inputField = new EditText(this);
         inputField.setTextColor(Color.WHITE);
         inputField.setHintTextColor(Color.rgb(150, 158, 168));
-        inputField.setHint("type command, text, or multi-line paste");
+        inputField.setHint("type, edit, paste");
         inputField.setSingleLine(false);
         inputField.setMinLines(1);
-        inputField.setMaxLines(4);
+        inputField.setMaxLines(3);
+        inputField.setCursorVisible(true);
+        inputField.setFocusableInTouchMode(true);
         inputField.setGravity(Gravity.TOP | Gravity.START);
         inputField.setImeOptions(EditorInfo.IME_ACTION_NONE);
         inputField.setInputType(InputType.TYPE_CLASS_TEXT
@@ -1220,28 +1230,9 @@ public final class MainActivity extends Activity {
         row.addView(inputField, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         row.addView(toolbarButton("Send", view -> sendLine()), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-                dp(54)
+                dp(48)
         ));
         bar.addView(row, matchWrap());
-
-        HorizontalScrollView actionScroller = new HorizontalScrollView(this);
-        actionScroller.setHorizontalScrollBarEnabled(false);
-        LinearLayout actions = new LinearLayout(this);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.setGravity(Gravity.CENTER_VERTICAL);
-        actions.setPadding(0, dp(5), 0, 0);
-        actions.addView(compactButton("Enter", view -> sendTerminalInput("\r")));
-        actions.addView(compactButton("NL", view -> insertComposerText("\n")));
-        actions.addView(compactButton("Keyboard", view -> showKeyboard()));
-        actions.addView(compactButton("Hide", view -> hideKeyboard()));
-        actions.addView(compactButton("Bottom", view -> scrollTerminalBottom()));
-        actions.addView(compactButton("Select", view -> toggleTerminalSelection()));
-        actions.addView(compactButton("Clear", view -> inputField.setText("")));
-        actionScroller.addView(actions, new HorizontalScrollView.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-        ));
-        bar.addView(actionScroller, matchWrap());
         return bar;
     }
 
@@ -1762,25 +1753,7 @@ public final class MainActivity extends Activity {
         return input;
     }
 
-    private LinearLayout createSoftKeyPad() {
-        LinearLayout pad = new LinearLayout(this);
-        pad.setOrientation(LinearLayout.VERTICAL);
-        pad.setBackgroundColor(Color.rgb(22, 27, 34));
-        pad.addView(createSoftKeyRow(
-                new String[]{"Esc", "Tab", "Ctrl+C", "Ctrl+D", "Ctrl+L", "Ctrl+R", "Ctrl+A", "Ctrl+E", "Paste"},
-                new String[]{"\u001b", "\t", "\u0003", "\u0004", "\u000c", "\u0012", "\u0001", "\u0005", null}
-        ), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
-        pad.addView(createSoftKeyRow(
-                new String[]{"Tmux", "Detach", "NewWin", "PrevWin", "NextWin", "Left", "Down", "Up", "Right", "PgUp", "PgDn", "Home", "End"},
-                new String[]{"\u0002", "\u0002d", "\u0002c", "\u0002p", "\u0002n", "\u001b[D", "\u001b[B", "\u001b[A", "\u001b[C", "\u001b[5~", "\u001b[6~", "\u001b[H", "\u001b[F"}
-        ), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
-        pad.addView(createTextKeyRow(
-                new String[]{"/", "-", "_", ".", "~", "|", "&", ";", ":", "\"", "'", "$", "Space", "Back"}
-        ), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
-        return pad;
-    }
-
-    private HorizontalScrollView createSoftKeyRow(String[] labels, String[] sequences) {
+    private HorizontalScrollView createAccessoryBar() {
         HorizontalScrollView scroller = new HorizontalScrollView(this);
         scroller.setHorizontalScrollBarEnabled(false);
         scroller.setBackgroundColor(Color.rgb(22, 27, 34));
@@ -1789,15 +1762,10 @@ public final class MainActivity extends Activity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(6), dp(4), dp(6), dp(4));
-        for (int index = 0; index < labels.length; index++) {
-            String label = labels[index];
-            String sequence = sequences[index];
-            if (sequence == null) {
-                addSoftButton(row, label, view -> pasteClipboard());
-            } else {
-                addSoftKey(row, label, sequence);
-            }
-        }
+        addAccessoryButton(row, "<", view -> setTerminalKeyPage(terminalKeyPage - 1));
+        addPageLabel(row);
+        addAccessoryPageKeys(row);
+        addAccessoryButton(row, ">", view -> setTerminalKeyPage(terminalKeyPage + 1));
         scroller.addView(row, new HorizontalScrollView.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
@@ -1805,29 +1773,85 @@ public final class MainActivity extends Activity {
         return scroller;
     }
 
-    private HorizontalScrollView createTextKeyRow(String[] labels) {
-        HorizontalScrollView scroller = new HorizontalScrollView(this);
-        scroller.setHorizontalScrollBarEnabled(false);
-        scroller.setBackgroundColor(Color.rgb(22, 27, 34));
+    private void addPageLabel(LinearLayout row) {
+        TextView label = new TextView(this);
+        label.setText(accessoryPageName());
+        label.setTextColor(Color.rgb(139, 148, 158));
+        label.setTextSize(11);
+        label.setGravity(Gravity.CENTER);
+        label.setTypeface(Typeface.DEFAULT_BOLD);
+        row.addView(label, new LinearLayout.LayoutParams(dp(58), ViewGroup.LayoutParams.MATCH_PARENT));
+    }
 
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(dp(6), dp(4), dp(6), dp(4));
-        for (String label : labels) {
-            if ("Space".equals(label)) {
-                addTextKey(row, label, " ");
-            } else if ("Back".equals(label)) {
-                addSoftButton(row, label, view -> backspaceComposerText());
-            } else {
-                addTextKey(row, label, label);
-            }
+    private void addAccessoryPageKeys(LinearLayout row) {
+        switch (terminalKeyPage) {
+            case 1:
+                addSoftKey(row, "Esc", "\u001b");
+                addSoftKey(row, "Tab", "\t");
+                addSoftKey(row, "^C", "\u0003");
+                addSoftKey(row, "^D", "\u0004");
+                addSoftKey(row, "^L", "\u000c");
+                addSoftKey(row, "^R", "\u0012");
+                addSoftKey(row, "^A", "\u0001");
+                addSoftKey(row, "^E", "\u0005");
+                break;
+            case 2:
+                addSoftKey(row, "Left", "\u001b[D");
+                addSoftKey(row, "Right", "\u001b[C");
+                addSoftKey(row, "Up", "\u001b[A");
+                addSoftKey(row, "Down", "\u001b[B");
+                addSoftKey(row, "Home", "\u001b[H");
+                addSoftKey(row, "End", "\u001b[F");
+                addSoftKey(row, "PgUp", "\u001b[5~");
+                addSoftKey(row, "PgDn", "\u001b[6~");
+                addSoftKey(row, "Tmux", "\u0002");
+                addSoftKey(row, "Detach", "\u0002d");
+                addSoftKey(row, "New", "\u0002c");
+                addSoftKey(row, "Prev", "\u0002p");
+                addSoftKey(row, "Next", "\u0002n");
+                break;
+            case 3:
+                addTextKey(row, "/", "/");
+                addTextKey(row, "-", "-");
+                addTextKey(row, "_", "_");
+                addTextKey(row, ".", ".");
+                addTextKey(row, "~", "~");
+                addTextKey(row, "|", "|");
+                addTextKey(row, "&", "&");
+                addTextKey(row, ";", ";");
+                addTextKey(row, "$", "$");
+                addTextKey(row, "Space", " ");
+                break;
+            case 0:
+            default:
+                addComposerButton(row, "Left", () -> moveComposerCursor(-1));
+                addComposerButton(row, "Right", () -> moveComposerCursor(1));
+                addSoftKey(row, "Up", "\u001b[A");
+                addSoftKey(row, "Down", "\u001b[B");
+                addSoftKey(row, "Enter", "\r");
+                addAccessoryButton(row, "NL", view -> insertComposerText("\n"));
+                addSoftButton(row, "Paste", view -> pasteClipboard());
+                addAccessoryButton(row, "Back", view -> backspaceComposerText());
+                addAccessoryButton(row, "Kbd", view -> showKeyboard());
+                addAccessoryButton(row, "Hide", view -> hideKeyboard());
+                addAccessoryButton(row, "Bottom", view -> scrollTerminalBottom());
+                addAccessoryButton(row, "Select", view -> toggleTerminalSelection());
+                break;
         }
-        scroller.addView(row, new HorizontalScrollView.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-        ));
-        return scroller;
+    }
+
+    private String accessoryPageName() {
+        switch (terminalKeyPage) {
+            case 1:
+                return "CTRL";
+            case 2:
+                return "NAV";
+            case 3:
+                return "SYM";
+            case 0:
+            default:
+                return "EDIT";
+        }
     }
 
     private void connectTerminal(String sessionName) {
@@ -1991,6 +2015,16 @@ public final class MainActivity extends Activity {
         inputField.requestFocus();
     }
 
+    private void moveComposerCursor(int delta) {
+        if (inputField == null) {
+            return;
+        }
+        int current = Math.max(0, inputField.getSelectionEnd());
+        int next = clamp(current + delta, 0, inputField.getText().length());
+        inputField.setSelection(next);
+        inputField.requestFocus();
+    }
+
     private void backspaceComposerText() {
         if (inputField == null) {
             return;
@@ -2026,7 +2060,6 @@ public final class MainActivity extends Activity {
         if (manager != null) {
             manager.hideSoftInputFromWindow(inputField.getWindowToken(), 0);
         }
-        inputField.clearFocus();
     }
 
     private void toggleTerminalSelection() {
@@ -2043,6 +2076,25 @@ public final class MainActivity extends Activity {
             terminalScroll.post(() -> terminalScroll.fullScroll(View.FOCUS_DOWN));
         }
         setStatus("Following terminal output");
+    }
+
+    private void setTerminalKeyPage(int page) {
+        terminalKeyPage = (page + 4) % 4;
+        if (activeSessionName != null) {
+            renderTerminalControlsOnly();
+        }
+    }
+
+    private void renderTerminalControlsOnly() {
+        int composerIndex = terminalComposerBar == null ? -1 : root.indexOfChild(terminalComposerBar);
+        if (composerIndex < 0 || composerIndex + 1 >= root.getChildCount()) {
+            return;
+        }
+        root.removeViewAt(composerIndex + 1);
+        root.addView(createAccessoryBar(), composerIndex + 1, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(48)
+        ));
     }
 
     private void appendTerminal(String data) {
@@ -2222,6 +2274,14 @@ public final class MainActivity extends Activity {
 
     private void addTextKey(LinearLayout row, String label, String text) {
         addSoftButton(row, label, view -> insertComposerText(text));
+    }
+
+    private void addAccessoryButton(LinearLayout row, String label, View.OnClickListener listener) {
+        addSoftButton(row, label, listener);
+    }
+
+    private void addComposerButton(LinearLayout row, String label, Runnable action) {
+        addSoftButton(row, label, view -> action.run());
     }
 
     private void addSoftButton(LinearLayout row, String label, View.OnClickListener listener) {
