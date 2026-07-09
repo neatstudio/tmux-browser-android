@@ -46,7 +46,9 @@ import org.json.JSONObject;
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -92,7 +94,7 @@ public final class MainActivity extends Activity {
     private static final String PAGE_TOOLS = "Tools";
     private static final String PAGE_UPDATE = "Update";
     private static final String PAGE_ABOUT = "About";
-    private static final String TERMINAL_ENTER = "\n";
+    private static final String TERMINAL_ENTER = "\r";
     private static final String[] SERVER_PROFILES = {
             "http://100.89.0.116:3000",
             "http://100.89.0.2:3000",
@@ -1320,9 +1322,10 @@ public final class MainActivity extends Activity {
             JSONObject rootObject = new JSONObject(text == null || text.isEmpty() ? "{}" : text);
             JSONArray projects = rootObject.optJSONArray("projects");
             if (projects == null) {
-                terminalGroupRow.addView(groupLabel("no group"));
+                renderUngroupedTerminalSessions(sessionName, null);
                 return;
             }
+            Set<String> groupedSessions = collectGroupedSessions(projects);
             for (int projectIndex = 0; projectIndex < projects.length(); projectIndex++) {
                 JSONObject project = projects.optJSONObject(projectIndex);
                 if (project == null) {
@@ -1342,10 +1345,60 @@ public final class MainActivity extends Activity {
                 }
                 return;
             }
-            terminalGroupRow.addView(groupLabel("no group"));
+            renderUngroupedTerminalSessions(sessionName, groupedSessions);
         } catch (Exception error) {
             terminalGroupRow.addView(groupLabel("group parse"));
         }
+    }
+
+    private Set<String> collectGroupedSessions(JSONArray projects) {
+        Set<String> names = new HashSet<>();
+        for (int projectIndex = 0; projectIndex < projects.length(); projectIndex++) {
+            JSONObject project = projects.optJSONObject(projectIndex);
+            JSONArray agents = project == null ? null : project.optJSONArray("agents");
+            for (int agentIndex = 0; agents != null && agentIndex < agents.length(); agentIndex++) {
+                String sessionName = agentSessionName(agents.optJSONObject(agentIndex));
+                if (!sessionName.isEmpty()) {
+                    names.add(sessionName);
+                }
+            }
+        }
+        return names;
+    }
+
+    private void renderUngroupedTerminalSessions(String sessionName, Set<String> groupedSessions) {
+        terminalGroupRow.addView(groupLabel("ungrouped..."));
+        executor.execute(() -> {
+            try {
+                List<SessionSummary> sessions = api.getSessions();
+                runOnUiThread(() -> {
+                    if (!sessionName.equals(activeSessionName) || terminalGroupRow == null) {
+                        return;
+                    }
+                    terminalGroupRow.removeAllViews();
+                    terminalGroupRow.addView(groupLabel("ungrouped"));
+                    int count = 0;
+                    for (SessionSummary session : sessions) {
+                        if (groupedSessions != null && groupedSessions.contains(session.name)) {
+                            continue;
+                        }
+                        terminalGroupRow.addView(groupSessionButton(session.name, session.name.equals(sessionName)));
+                        count++;
+                    }
+                    if (count == 0) {
+                        terminalGroupRow.removeAllViews();
+                        terminalGroupRow.addView(groupLabel("no group"));
+                    }
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    if (sessionName.equals(activeSessionName) && terminalGroupRow != null) {
+                        terminalGroupRow.removeAllViews();
+                        terminalGroupRow.addView(groupLabel("ungrouped failed"));
+                    }
+                });
+            }
+        });
     }
 
     private boolean projectContainsSession(JSONArray agents, String sessionName) {
@@ -2770,19 +2823,19 @@ public final class MainActivity extends Activity {
 
     private void addSoftButton(LinearLayout row, String label, View.OnClickListener listener) {
         Button button = toolbarButton(label, listener);
-        button.setTextSize(isArrowLabel(label) ? 17 : 10);
+        button.setTextSize(isArrowLabel(label) ? 16 : 10);
         button.setPadding(dp(5), 0, dp(5), 0);
-        int width = "Space".equals(label) ? 64 : (isArrowLabel(label) ? 38 : 44);
+        int width = "Space".equals(label) ? 62 : (isArrowLabel(label) ? 36 : 42);
         button.setMinWidth(dp(width));
         button.setMinimumWidth(dp(width));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
+                dp(30)
         );
         params.leftMargin = dp(2);
         params.rightMargin = dp(2);
-        params.topMargin = dp(1);
-        params.bottomMargin = dp(1);
+        params.topMargin = dp(2);
+        params.bottomMargin = dp(2);
         row.addView(button, params);
     }
 
