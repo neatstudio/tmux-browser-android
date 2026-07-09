@@ -80,6 +80,14 @@ final class UpdateManager {
         );
     }
 
+    void checkPreview(boolean userInitiated) {
+        startUpdateCheck(
+                userInitiated,
+                "Preview",
+                new String[]{BuildConfig.DEFAULT_PREVIEW_UPDATE_URL}
+        );
+    }
+
     void checkWithFallback(boolean userInitiated) {
         startUpdateCheck(
                 userInitiated,

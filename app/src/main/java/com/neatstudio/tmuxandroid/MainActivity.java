@@ -19,6 +19,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.text.TextUtils;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
@@ -113,12 +114,16 @@ public final class MainActivity extends Activity {
     private TextView sessionSummaryText;
     private LinearLayout projectList;
     private TextView terminalText;
+    private TextView terminalMetaText;
     private ScrollView terminalScroll;
     private EditText inputField;
     private Button terminalKeyPageButton;
     private View terminalComposerBar;
     private LinearLayout terminalGroupRow;
     private String activeSessionName;
+    private String terminalPathStatus = "";
+    private String terminalSocketStatus = "";
+    private String terminalEventStatus = "";
     private String activeMainPage = PAGE_SERVERS;
     private String pendingImageUploadSession;
     private TerminalScreenBuffer terminalScreen = new TerminalScreenBuffer(DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS);
@@ -505,6 +510,7 @@ public final class MainActivity extends Activity {
                 actionButton("Auto check", view -> updateManager.check(true)),
                 actionButton("Gitea", view -> updateManager.checkGitea(true)),
                 actionButton("GitHub", view -> updateManager.checkGithub(true)),
+                actionButton("Preview", view -> updateManager.checkPreview(true)),
                 actionButton("Selected", view -> updateManager.checkSelected(true)),
                 actionButton("Source", view -> showUpdateSourcePicker()),
                 actionButton("APK", view -> updateManager.openApkDownload())
@@ -1116,6 +1122,9 @@ public final class MainActivity extends Activity {
         terminalSelectionEnabled = false;
         terminalFollowOutput = true;
         terminalKeyPage = 0;
+        terminalPathStatus = "path loading";
+        terminalSocketStatus = "terminal idle";
+        terminalEventStatus = "events listening";
         lastTerminalRenderMs = 0L;
         terminalCols = DEFAULT_TERMINAL_COLS;
         terminalRows = DEFAULT_TERMINAL_ROWS;
@@ -1166,6 +1175,7 @@ public final class MainActivity extends Activity {
             resizeTerminalToViewport(false);
             connectTerminal(sessionName);
             refreshTerminalGroupSessions(sessionName);
+            refreshTerminalSessionMeta(sessionName);
         });
         inputField.post(() -> {
             inputField.requestFocus();
@@ -1177,17 +1187,41 @@ public final class MainActivity extends Activity {
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setPadding(dp(5), dp(5), dp(5), dp(5));
+        bar.setPadding(dp(5), dp(3), dp(5), dp(3));
         bar.setBackgroundColor(COLOR_BAR);
         bar.addView(terminalToolButton("‹", view -> openSessionPage()));
+
+        LinearLayout titleBlock = new LinearLayout(this);
+        titleBlock.setOrientation(LinearLayout.VERTICAL);
+        titleBlock.setGravity(Gravity.CENTER_VERTICAL);
+        titleBlock.setPadding(dp(8), 0, dp(8), 0);
+
         TextView title = new TextView(this);
         title.setText(sessionName);
         title.setTextColor(COLOR_TEXT);
-        title.setTextSize(15);
+        title.setTextSize(14);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setSingleLine(true);
-        title.setPadding(dp(8), 0, dp(8), 0);
-        bar.addView(title, new LinearLayout.LayoutParams(0, dp(36), 1));
+        title.setEllipsize(TextUtils.TruncateAt.END);
+        title.setIncludeFontPadding(false);
+
+        terminalMetaText = new TextView(this);
+        terminalMetaText.setTextColor(COLOR_TEXT_DIM);
+        terminalMetaText.setTextSize(10);
+        terminalMetaText.setSingleLine(true);
+        terminalMetaText.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+        terminalMetaText.setIncludeFontPadding(false);
+        updateTerminalMeta();
+
+        titleBlock.addView(title, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(18)
+        ));
+        titleBlock.addView(terminalMetaText, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(14)
+        ));
+        bar.addView(titleBlock, new LinearLayout.LayoutParams(0, dp(34), 1));
         bar.addView(terminalToolButton("↻", view -> connectTerminal(sessionName)));
         bar.addView(terminalToolButton("⋯", view -> showTerminalActions(sessionName)));
         return bar;
@@ -1225,6 +1259,56 @@ public final class MainActivity extends Activity {
                 });
             }
         });
+    }
+
+    private void refreshTerminalSessionMeta(String sessionName) {
+        executor.execute(() -> {
+            try {
+                List<SessionSummary> sessions = api.getSessions();
+                String path = "";
+                String command = "";
+                for (SessionSummary session : sessions) {
+                    if (sessionName.equals(session.name)) {
+                        path = defaultValue(session.currentPath, "");
+                        command = defaultValue(session.currentCommand, "");
+                        break;
+                    }
+                }
+                String meta = path.isEmpty() ? "path unavailable" : path;
+                if (!command.isEmpty()) {
+                    meta = meta + "  ·  " + command;
+                }
+                String finalMeta = meta;
+                runOnUiThread(() -> {
+                    if (sessionName.equals(activeSessionName)) {
+                        terminalPathStatus = finalMeta;
+                        updateTerminalMeta();
+                    }
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    if (sessionName.equals(activeSessionName)) {
+                        terminalPathStatus = "path unavailable";
+                        updateTerminalMeta();
+                    }
+                });
+            }
+        });
+    }
+
+    private void updateTerminalMeta() {
+        if (terminalMetaText == null) {
+            return;
+        }
+        StringBuilder meta = new StringBuilder();
+        meta.append(defaultValue(terminalPathStatus, "path loading"));
+        if (!terminalSocketStatus.isEmpty()) {
+            meta.append("  ·  ").append(terminalSocketStatus);
+        }
+        if (!terminalEventStatus.isEmpty()) {
+            meta.append("  ·  ").append(terminalEventStatus);
+        }
+        terminalMetaText.setText(meta.toString());
     }
 
     private void renderTerminalGroupSessions(String sessionName, String text) {
@@ -1497,6 +1581,10 @@ public final class MainActivity extends Activity {
             return false;
         });
         row.addView(inputField, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        row.addView(toolbarButton("Type", view -> sendTypedText()), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                dp(48)
+        ));
         row.addView(toolbarButton("Send", view -> sendLine()), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 dp(48)
@@ -1749,7 +1837,7 @@ public final class MainActivity extends Activity {
         text.append("Tap Release on the About page. The app resolves the page from the selected update source.\n");
         text.append('\n');
         text.append("In-app update:\n");
-        text.append("Tap Auto check on the Update page to try Gitea first and GitHub only if Gitea cannot be reached. Use Gitea, GitHub, or Selected to force one source. Each source retries transient network failures before failing. The app downloads one APK per version, verifies SHA-256, then opens Android's installer.\n");
+        text.append("Tap Auto check on the Update page to try Gitea first and GitHub only if Gitea cannot be reached. Use Gitea, GitHub, Preview, or Selected to force one source. Preview resolves the mutable Gitea preview attachment for fast UI testing. Each source retries transient network failures before failing. The app downloads one APK per version, verifies SHA-256, then opens Android's installer.\n");
         text.append("Selected manifest: ")
                 .append(updateSourceHost())
                 .append('\n')
@@ -1758,6 +1846,7 @@ public final class MainActivity extends Activity {
         text.append("Available sources:\n");
         text.append("Gitea default: ").append(BuildConfig.DEFAULT_GITEA_UPDATE_URL).append('\n');
         text.append("GitHub optional: ").append(BuildConfig.DEFAULT_GITHUB_UPDATE_URL).append('\n');
+        text.append("Preview manual: ").append(BuildConfig.DEFAULT_PREVIEW_UPDATE_URL).append('\n');
         text.append('\n');
         text.append(permissionSummary());
 
@@ -1796,6 +1885,7 @@ public final class MainActivity extends Activity {
         String[] items = {
                 "Gitea default: " + BuildConfig.DEFAULT_GITEA_UPDATE_URL,
                 "GitHub optional: " + BuildConfig.DEFAULT_GITHUB_UPDATE_URL,
+                "Preview manual: " + BuildConfig.DEFAULT_PREVIEW_UPDATE_URL,
                 "Custom URL"
         };
         new AlertDialog.Builder(this)
@@ -1805,6 +1895,8 @@ public final class MainActivity extends Activity {
                         setUpdateUrl(BuildConfig.DEFAULT_GITEA_UPDATE_URL);
                     } else if (which == 1) {
                         setUpdateUrl(BuildConfig.DEFAULT_GITHUB_UPDATE_URL);
+                    } else if (which == 2) {
+                        setUpdateUrl(BuildConfig.DEFAULT_PREVIEW_UPDATE_URL);
                     } else {
                         promptText("Custom update manifest", "https://.../latest.json", prefs.getString("update_url", BuildConfig.DEFAULT_UPDATE_URL), this::setUpdateUrl);
                     }
@@ -2138,7 +2230,8 @@ public final class MainActivity extends Activity {
                 addComposerButton(topRow, "→", () -> moveComposerCursor(1));
                 addSoftKey(topRow, "↑", "\u001b[A");
                 addSoftKey(topRow, "↓", "\u001b[B");
-                addSoftKey(topRow, "↵", TERMINAL_ENTER);
+                addSoftKey(topRow, "Enter", TERMINAL_ENTER);
+                addSoftKey(topRow, "Tab", "\t");
                 addAccessoryButton(topRow, "NL", view -> insertComposerText("\n"));
                 addSoftButton(bottomRow, "Pst", view -> pasteClipboard());
                 addAccessoryButton(bottomRow, "⌫", view -> backspaceComposerText());
@@ -2168,6 +2261,8 @@ public final class MainActivity extends Activity {
         closeTerminalSocket();
         queuedTerminalInput.setLength(0);
         terminalConnected = false;
+        terminalSocketStatus = "terminal connecting";
+        updateTerminalMeta();
         setStatus("Connecting " + sessionName);
         resizeTerminalToViewport(false);
         appendTerminal("[connecting]\r\n");
@@ -2176,6 +2271,8 @@ public final class MainActivity extends Activity {
             public void onConnected() {
                 runOnUiThread(() -> {
                     terminalConnected = true;
+                    terminalSocketStatus = "terminal connected";
+                    updateTerminalMeta();
                     setStatus("Connected " + sessionName);
                     resizeTerminalToViewport(true);
                     flushQueuedTerminalInput();
@@ -2191,6 +2288,8 @@ public final class MainActivity extends Activity {
             public void onError(String message) {
                 runOnUiThread(() -> {
                     appendTerminal("\r\n[error] " + message + "\r\n");
+                    terminalSocketStatus = "terminal error";
+                    updateTerminalMeta();
                     setStatus("Terminal error: " + message);
                 });
             }
@@ -2199,6 +2298,8 @@ public final class MainActivity extends Activity {
             public void onClosed() {
                 runOnUiThread(() -> {
                     terminalConnected = false;
+                    terminalSocketStatus = "terminal disconnected";
+                    updateTerminalMeta();
                     setStatus("Disconnected " + sessionName);
                 });
             }
@@ -2257,6 +2358,21 @@ public final class MainActivity extends Activity {
         sendTerminalInput(normalized);
         inputField.setText("");
         setStatus("Sent " + text.length() + " chars");
+    }
+
+    private void sendTypedText() {
+        if (inputField == null) {
+            return;
+        }
+        String text = inputField.getText().toString();
+        if (text.isEmpty()) {
+            return;
+        }
+        String normalized = text.replace("\r\n", "\n").replace('\r', '\n');
+        terminalFollowOutput = true;
+        sendTerminalInput(normalized);
+        inputField.setText("");
+        setStatus("Typed " + text.length() + " chars");
     }
 
     private void sendTerminalInput(String data) {
@@ -2820,7 +2936,11 @@ public final class MainActivity extends Activity {
 
             @Override
             public void onClosed() {
-                runOnUiThread(() -> setStatus("Event stream disconnected"));
+                runOnUiThread(() -> {
+                    terminalEventStatus = "events disconnected";
+                    updateTerminalMeta();
+                    setStatus("Event stream disconnected");
+                });
             }
         });
         eventSocket.connect(api.getBaseUrl());
@@ -2831,10 +2951,17 @@ public final class MainActivity extends Activity {
             JSONObject event = new JSONObject(text);
             String type = event.optString("type", "");
             if ("hello".equals(type)) {
+                terminalEventStatus = "events connected";
+                updateTerminalMeta();
                 setStatus("Event stream connected");
                 return;
             }
             if ("sessions-invalidated".equals(type)) {
+                terminalEventStatus = "sessions changed";
+                updateTerminalMeta();
+                if (activeSessionName != null) {
+                    refreshTerminalSessionMeta(activeSessionName);
+                }
                 setStatus("Sessions changed: " + event.optString("reason", "update"));
                 if (activeSessionName == null) {
                     refreshSessions();
@@ -2842,11 +2969,17 @@ public final class MainActivity extends Activity {
                 return;
             }
             if ("hook-event".equals(type)) {
+                terminalEventStatus = "hook event";
+                updateTerminalMeta();
                 showMessage(event.optString("title", "Hook event"));
                 return;
             }
+            terminalEventStatus = type.isEmpty() ? "event received" : type;
+            updateTerminalMeta();
             setStatus(type.isEmpty() ? "Event received" : type);
         } catch (Exception error) {
+            terminalEventStatus = "event received";
+            updateTerminalMeta();
             setStatus("Event received");
         }
     }
