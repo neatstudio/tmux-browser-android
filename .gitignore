@@ -1,4 +1,5 @@
 .gradle/
+.ci/
 build/
 app/build/
 local.properties
@@ -6,4 +7,3 @@ signing.properties
 *.jks
 *.keystore
 release/
-
