@@ -115,6 +115,7 @@ public final class MainActivity extends Activity {
     private TextView terminalText;
     private ScrollView terminalScroll;
     private EditText inputField;
+    private Button terminalKeyPageButton;
     private View terminalComposerBar;
     private LinearLayout terminalGroupRow;
     private String activeSessionName;
@@ -1456,6 +1457,14 @@ public final class MainActivity extends Activity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.BOTTOM);
 
+        terminalKeyPageButton = terminalPageButton();
+        LinearLayout.LayoutParams pageParams = new LinearLayout.LayoutParams(
+                dp(70),
+                dp(48)
+        );
+        pageParams.rightMargin = dp(6);
+        row.addView(terminalKeyPageButton, pageParams);
+
         inputField = new EditText(this);
         inputField.setTextColor(COLOR_TEXT);
         inputField.setHintTextColor(COLOR_TEXT_DIM);
@@ -2056,10 +2065,7 @@ public final class MainActivity extends Activity {
 
         LinearLayout firstRow = terminalKeyRow();
         LinearLayout secondRow = terminalKeyRow();
-        addAccessoryButton(firstRow, "<", view -> setTerminalKeyPage(terminalKeyPage - 1));
-        addPageLabel(firstRow);
         addAccessoryPageKeys(firstRow, secondRow);
-        addAccessoryButton(firstRow, ">", view -> setTerminalKeyPage(terminalKeyPage + 1));
         pad.addView(firstRow, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 0,
@@ -2083,16 +2089,6 @@ public final class MainActivity extends Activity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         return row;
-    }
-
-    private void addPageLabel(LinearLayout row) {
-        TextView label = new TextView(this);
-        label.setText(accessoryPageName());
-        label.setTextColor(COLOR_TEXT_DIM);
-        label.setTextSize(11);
-        label.setGravity(Gravity.CENTER);
-        label.setTypeface(Typeface.DEFAULT_BOLD);
-        row.addView(label, new LinearLayout.LayoutParams(dp(44), ViewGroup.LayoutParams.MATCH_PARENT));
     }
 
     private void addAccessoryPageKeys(LinearLayout topRow, LinearLayout bottomRow) {
@@ -2393,6 +2389,7 @@ public final class MainActivity extends Activity {
 
     private void setTerminalKeyPage(int page) {
         terminalKeyPage = (page + 4) % 4;
+        updateTerminalPageButton();
         if (activeSessionName != null) {
             renderTerminalControlsOnly();
         }
@@ -2555,6 +2552,31 @@ public final class MainActivity extends Activity {
         params.rightMargin = dp(2);
         button.setLayoutParams(params);
         return button;
+    }
+
+    private Button terminalPageButton() {
+        Button button = toolbarButton("", view -> setTerminalKeyPage(terminalKeyPage + 1));
+        button.setTextSize(10);
+        button.setPadding(dp(5), 0, dp(5), 0);
+        button.setMinWidth(dp(70));
+        button.setMinimumWidth(dp(70));
+        button.setOnLongClickListener(view -> {
+            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            setTerminalKeyPage(terminalKeyPage - 1);
+            return true;
+        });
+        updateTerminalPageButton(button);
+        return button;
+    }
+
+    private void updateTerminalPageButton() {
+        updateTerminalPageButton(terminalKeyPageButton);
+    }
+
+    private void updateTerminalPageButton(Button button) {
+        if (button != null) {
+            button.setText("‹ " + accessoryPageName() + " ›");
+        }
     }
 
     private void styleInput(EditText input) {
