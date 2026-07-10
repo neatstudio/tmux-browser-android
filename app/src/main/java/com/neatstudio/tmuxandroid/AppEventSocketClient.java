@@ -4,6 +4,7 @@ import android.util.Base64;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -14,16 +15,22 @@ import java.util.Arrays;
 import javax.net.ssl.SSLSocketFactory;
 
 final class AppEventSocketClient {
+    private static final long HEARTBEAT_INTERVAL_MS = 15000L;
+    private static final int SOCKET_CONNECT_TIMEOUT_MS = 10000;
+    private static final int SOCKET_READ_TIMEOUT_MS = 45000;
+
     interface Listener {
         void onMessage(String text);
         void onClosed();
     }
 
     private final Listener listener;
+    private final Object writeLock = new Object();
     private Socket socket;
     private BufferedInputStream input;
     private BufferedOutputStream output;
     private volatile boolean closed;
+    private Thread heartbeatThread;
 
     AppEventSocketClient(Listener listener) {
         this.listener = listener;
@@ -40,12 +47,11 @@ final class AppEventSocketClient {
             sendFrame(8, new byte[0]);
         } catch (Exception ignored) {
         }
-        try {
-            if (socket != null) {
-                socket.close();
-            }
-        } catch (Exception ignored) {
-        }
+        closeSocketQuietly();
+    }
+
+    boolean isClosed() {
+        return closed;
     }
 
     private void run(String baseUrl) {
@@ -55,6 +61,7 @@ final class AppEventSocketClient {
             input = new BufferedInputStream(socket.getInputStream());
             output = new BufferedOutputStream(socket.getOutputStream());
             handshake(uri);
+            startHeartbeat();
             while (!closed) {
                 Frame frame = readFrame();
                 if (frame.opcode == 1) {
@@ -69,12 +76,7 @@ final class AppEventSocketClient {
         } finally {
             closed = true;
             listener.onClosed();
-            try {
-                if (socket != null) {
-                    socket.close();
-                }
-            } catch (Exception ignored) {
-            }
+            closeSocketQuietly();
         }
     }
 
@@ -91,10 +93,38 @@ final class AppEventSocketClient {
         if (port == -1) {
             port = "wss".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
         }
+        Socket raw = new Socket();
+        raw.connect(new InetSocketAddress(uri.getHost(), port), SOCKET_CONNECT_TIMEOUT_MS);
+        Socket connected;
         if ("wss".equalsIgnoreCase(uri.getScheme())) {
-            return SSLSocketFactory.getDefault().createSocket(uri.getHost(), port);
+            connected = SSLSocketFactory.getDefault().createSocket(raw, uri.getHost(), port, true);
+        } else {
+            connected = raw;
         }
-        return new Socket(uri.getHost(), port);
+        connected.setKeepAlive(true);
+        connected.setTcpNoDelay(true);
+        connected.setSoTimeout(SOCKET_READ_TIMEOUT_MS);
+        return connected;
+    }
+
+    private void startHeartbeat() {
+        heartbeatThread = new Thread(() -> {
+            while (!closed) {
+                try {
+                    Thread.sleep(HEARTBEAT_INTERVAL_MS);
+                    if (!closed) {
+                        sendFrame(9, new byte[0]);
+                    }
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                    return;
+                } catch (Exception error) {
+                    closeSocketQuietly();
+                    return;
+                }
+            }
+        }, "app-events-ws-heartbeat");
+        heartbeatThread.start();
     }
 
     private void handshake(URI uri) throws Exception {
@@ -181,32 +211,47 @@ final class AppEventSocketClient {
     }
 
     private void sendFrame(int opcode, byte[] payload) throws Exception {
-        if (output == null) {
-            return;
-        }
-        output.write(0x80 | opcode);
-        byte[] mask = new byte[4];
-        new SecureRandom().nextBytes(mask);
-        int length = payload.length;
-        if (length < 126) {
-            output.write(0x80 | length);
-        } else if (length <= 0xffff) {
-            output.write(0x80 | 126);
-            output.write((length >>> 8) & 0xff);
-            output.write(length & 0xff);
-        } else {
-            output.write(0x80 | 127);
-            for (int i = 7; i >= 0; i--) {
-                output.write((length >>> (8 * i)) & 0xff);
+        synchronized (writeLock) {
+            if (output == null) {
+                return;
             }
+            output.write(0x80 | opcode);
+            byte[] mask = new byte[4];
+            new SecureRandom().nextBytes(mask);
+            int length = payload.length;
+            if (length < 126) {
+                output.write(0x80 | length);
+            } else if (length <= 0xffff) {
+                output.write(0x80 | 126);
+                output.write((length >>> 8) & 0xff);
+                output.write(length & 0xff);
+            } else {
+                output.write(0x80 | 127);
+                for (int i = 7; i >= 0; i--) {
+                    output.write((length >>> (8 * i)) & 0xff);
+                }
+            }
+            output.write(mask);
+            byte[] masked = Arrays.copyOf(payload, payload.length);
+            for (int i = 0; i < masked.length; i++) {
+                masked[i] = (byte) (masked[i] ^ mask[i % 4]);
+            }
+            output.write(masked);
+            output.flush();
         }
-        output.write(mask);
-        byte[] masked = Arrays.copyOf(payload, payload.length);
-        for (int i = 0; i < masked.length; i++) {
-            masked[i] = (byte) (masked[i] ^ mask[i % 4]);
+    }
+
+    private void closeSocketQuietly() {
+        if (heartbeatThread != null) {
+            heartbeatThread.interrupt();
+            heartbeatThread = null;
         }
-        output.write(masked);
-        output.flush();
+        try {
+            if (socket != null) {
+                socket.close();
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     private static final class Frame {

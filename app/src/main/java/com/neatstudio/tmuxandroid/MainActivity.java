@@ -18,6 +18,8 @@ import android.graphics.drawable.StateListDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.text.InputType;
@@ -68,6 +70,7 @@ public final class MainActivity extends Activity {
     private static final int STATUS_SUCCESS = 2;
     private static final int STATUS_ERROR = 3;
     private static final long TERMINAL_RENDER_INTERVAL_MS = 80L;
+    private static final long[] SOCKET_RECONNECT_DELAYS_MS = {1000L, 2000L, 4000L, 8000L, 15000L};
     private static final int COLOR_APP_BG = Color.rgb(9, 11, 13);
     private static final int COLOR_BAR = Color.rgb(15, 18, 21);
     private static final int COLOR_PANEL = Color.rgb(22, 26, 30);
@@ -104,6 +107,7 @@ public final class MainActivity extends Activity {
     };
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private SharedPreferences prefs;
     private UpdateManager updateManager;
     private SessionApiClient api;
@@ -131,10 +135,18 @@ public final class MainActivity extends Activity {
     private TerminalScreenBuffer terminalScreen = new TerminalScreenBuffer(DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS);
     private final StringBuilder queuedTerminalInput = new StringBuilder();
     private boolean terminalConnected;
+    private boolean terminalConnecting;
     private boolean terminalRenderPending;
     private boolean terminalSelectionEnabled;
     private boolean terminalFollowOutput = true;
     private int terminalKeyPage;
+    private int terminalReconnectAttempt;
+    private int terminalConnectionGeneration;
+    private int eventReconnectAttempt;
+    private int eventConnectionGeneration;
+    private boolean activityDestroyed;
+    private Runnable terminalReconnectTask;
+    private Runnable eventReconnectTask;
     private long lastTerminalRenderMs;
     private int terminalCols = DEFAULT_TERMINAL_COLS;
     private int terminalRows = DEFAULT_TERMINAL_ROWS;
@@ -2307,9 +2319,22 @@ public final class MainActivity extends Activity {
     }
 
     private void connectTerminal(String sessionName) {
-        closeTerminalSocket();
-        queuedTerminalInput.setLength(0);
+        terminalReconnectAttempt = 0;
+        terminalConnectionGeneration++;
+        cancelTerminalReconnect();
+        closeTerminalSocket(false);
+        connectTerminalSocket(sessionName, terminalConnectionGeneration);
+    }
+
+    private void connectTerminalSocket(String sessionName, int generation) {
+        if (activityDestroyed
+                || activeSessionName == null
+                || !sessionName.equals(activeSessionName)
+                || generation != terminalConnectionGeneration) {
+            return;
+        }
         terminalConnected = false;
+        terminalConnecting = true;
         terminalSocketStatus = "terminal connecting";
         updateTerminalMeta();
         setStatus("Connecting " + sessionName);
@@ -2319,7 +2344,12 @@ public final class MainActivity extends Activity {
             @Override
             public void onConnected() {
                 runOnUiThread(() -> {
+                    if (!isCurrentTerminalConnection(sessionName, generation)) {
+                        return;
+                    }
                     terminalConnected = true;
+                    terminalConnecting = false;
+                    terminalReconnectAttempt = 0;
                     terminalSocketStatus = "terminal connected";
                     updateTerminalMeta();
                     setStatus("Connected " + sessionName);
@@ -2330,12 +2360,20 @@ public final class MainActivity extends Activity {
 
             @Override
             public void onOutput(String data) {
-                runOnUiThread(() -> appendTerminal(data));
+                runOnUiThread(() -> {
+                    if (isCurrentTerminalConnection(sessionName, generation)) {
+                        appendTerminal(data);
+                    }
+                });
             }
 
             @Override
             public void onError(String message) {
                 runOnUiThread(() -> {
+                    if (!isCurrentTerminalConnection(sessionName, generation)) {
+                        return;
+                    }
+                    terminalConnecting = false;
                     appendTerminal("\r\n[error] " + message + "\r\n");
                     terminalSocketStatus = "terminal error";
                     updateTerminalMeta();
@@ -2346,10 +2384,15 @@ public final class MainActivity extends Activity {
             @Override
             public void onClosed() {
                 runOnUiThread(() -> {
+                    if (!isCurrentTerminalConnection(sessionName, generation)) {
+                        return;
+                    }
                     terminalConnected = false;
+                    terminalConnecting = false;
                     terminalSocketStatus = "terminal disconnected";
                     updateTerminalMeta();
                     setStatus("Disconnected " + sessionName);
+                    scheduleTerminalReconnect(sessionName, generation);
                 });
             }
         });
@@ -2410,7 +2453,8 @@ public final class MainActivity extends Activity {
     }
 
     private void sendTerminalInput(String data) {
-        if (activeSessionName == null) {
+        String sessionName = activeSessionName;
+        if (sessionName == null) {
             return;
         }
         TerminalSocketClient socket = terminalSocket;
@@ -2419,7 +2463,7 @@ public final class MainActivity extends Activity {
             setStatus("Sent input");
             return;
         }
-        if (socket != null && !socket.isClosed()) {
+        if ((socket != null && !socket.isClosed()) || terminalConnecting || terminalReconnectTask != null) {
             queuedTerminalInput.append(data);
             setStatus("Queued input until terminal connects");
             return;
@@ -2427,7 +2471,7 @@ public final class MainActivity extends Activity {
         executor.execute(() -> {
             try {
                 for (int i = 0; i < data.length(); i += 200) {
-                    api.sendInput(activeSessionName, data.substring(i, Math.min(i + 200, data.length())));
+                    api.sendInput(sessionName, data.substring(i, Math.min(i + 200, data.length())));
                 }
                 runOnUiThread(() -> setStatus("Sent input"));
             } catch (Exception error) {
@@ -2948,9 +2992,53 @@ public final class MainActivity extends Activity {
         return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
+    private boolean isCurrentTerminalConnection(String sessionName, int generation) {
+        return !activityDestroyed
+                && generation == terminalConnectionGeneration
+                && sessionName.equals(activeSessionName);
+    }
+
+    private void scheduleTerminalReconnect(String sessionName, int generation) {
+        if (!isCurrentTerminalConnection(sessionName, generation) || terminalReconnectTask != null) {
+            return;
+        }
+        long delay = reconnectDelay(terminalReconnectAttempt++);
+        terminalSocketStatus = "retry in " + Math.max(1L, delay / 1000L) + "s";
+        updateTerminalMeta();
+        setStatus("Terminal reconnecting in " + Math.max(1L, delay / 1000L) + "s");
+        terminalReconnectTask = () -> {
+            terminalReconnectTask = null;
+            if (isCurrentTerminalConnection(sessionName, generation)) {
+                connectTerminalSocket(sessionName, generation);
+            }
+        };
+        mainHandler.postDelayed(terminalReconnectTask, delay);
+    }
+
+    private void cancelTerminalReconnect() {
+        if (terminalReconnectTask != null) {
+            mainHandler.removeCallbacks(terminalReconnectTask);
+            terminalReconnectTask = null;
+        }
+    }
+
+    private long reconnectDelay(int attempt) {
+        return SOCKET_RECONNECT_DELAYS_MS[Math.min(attempt, SOCKET_RECONNECT_DELAYS_MS.length - 1)];
+    }
+
     private void closeTerminalSocket() {
+        closeTerminalSocket(true);
+    }
+
+    private void closeTerminalSocket(boolean invalidateConnection) {
+        if (invalidateConnection) {
+            terminalConnectionGeneration++;
+            terminalReconnectAttempt = 0;
+            cancelTerminalReconnect();
+            queuedTerminalInput.setLength(0);
+        }
         terminalConnected = false;
-        queuedTerminalInput.setLength(0);
+        terminalConnecting = false;
         terminalRenderPending = false;
         if (terminalSocket != null) {
             terminalSocket.close();
@@ -2959,25 +3047,69 @@ public final class MainActivity extends Activity {
     }
 
     private void connectAppEvents() {
+        eventReconnectAttempt = 0;
+        eventConnectionGeneration++;
+        cancelEventReconnect();
         if (eventSocket != null) {
             eventSocket.close();
+            eventSocket = null;
+        }
+        connectAppEventSocket(api.getBaseUrl(), eventConnectionGeneration);
+    }
+
+    private void connectAppEventSocket(String baseUrl, int generation) {
+        if (activityDestroyed || generation != eventConnectionGeneration) {
+            return;
         }
         eventSocket = new AppEventSocketClient(new AppEventSocketClient.Listener() {
             @Override
             public void onMessage(String text) {
-                runOnUiThread(() -> handleAppEvent(text));
+                runOnUiThread(() -> {
+                    if (generation == eventConnectionGeneration && !activityDestroyed) {
+                        handleAppEvent(text);
+                    }
+                });
             }
 
             @Override
             public void onClosed() {
                 runOnUiThread(() -> {
+                    if (generation != eventConnectionGeneration || activityDestroyed) {
+                        return;
+                    }
                     terminalEventStatus = "events disconnected";
                     updateTerminalMeta();
                     setStatus("Event stream disconnected");
+                    scheduleEventReconnect(baseUrl, generation);
                 });
             }
         });
-        eventSocket.connect(api.getBaseUrl());
+        eventSocket.connect(baseUrl);
+    }
+
+    private void scheduleEventReconnect(String baseUrl, int generation) {
+        if (activityDestroyed
+                || generation != eventConnectionGeneration
+                || eventReconnectTask != null) {
+            return;
+        }
+        long delay = reconnectDelay(eventReconnectAttempt++);
+        terminalEventStatus = "events retry in " + Math.max(1L, delay / 1000L) + "s";
+        updateTerminalMeta();
+        eventReconnectTask = () -> {
+            eventReconnectTask = null;
+            if (!activityDestroyed && generation == eventConnectionGeneration) {
+                connectAppEventSocket(baseUrl, generation);
+            }
+        };
+        mainHandler.postDelayed(eventReconnectTask, delay);
+    }
+
+    private void cancelEventReconnect() {
+        if (eventReconnectTask != null) {
+            mainHandler.removeCallbacks(eventReconnectTask);
+            eventReconnectTask = null;
+        }
     }
 
     private void handleAppEvent(String text) {
@@ -2985,6 +3117,7 @@ public final class MainActivity extends Activity {
             JSONObject event = new JSONObject(text);
             String type = event.optString("type", "");
             if ("hello".equals(type)) {
+                eventReconnectAttempt = 0;
                 terminalEventStatus = "events connected";
                 updateTerminalMeta();
                 setStatus("Event stream connected");
@@ -3077,11 +3210,23 @@ public final class MainActivity extends Activity {
         if (updateManager != null) {
             updateManager.resumePendingInstall();
         }
+        if (activeSessionName != null
+                && !terminalConnected
+                && !terminalConnecting
+                && terminalReconnectTask == null) {
+            scheduleTerminalReconnect(activeSessionName, terminalConnectionGeneration);
+        }
+        if ((eventSocket == null || eventSocket.isClosed()) && eventReconnectTask == null) {
+            connectAppEvents();
+        }
     }
 
     @Override
     protected void onDestroy() {
+        activityDestroyed = true;
         closeTerminalSocket();
+        eventConnectionGeneration++;
+        cancelEventReconnect();
         if (eventSocket != null) {
             eventSocket.close();
             eventSocket = null;

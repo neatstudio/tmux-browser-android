@@ -6,6 +6,7 @@ import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -19,6 +20,10 @@ import java.util.concurrent.RejectedExecutionException;
 import javax.net.ssl.SSLSocketFactory;
 
 final class TerminalSocketClient {
+    private static final long HEARTBEAT_INTERVAL_MS = 15000L;
+    private static final int SOCKET_CONNECT_TIMEOUT_MS = 10000;
+    private static final int SOCKET_READ_TIMEOUT_MS = 45000;
+
     interface Listener {
         void onConnected();
         void onOutput(String data);
@@ -35,6 +40,7 @@ final class TerminalSocketClient {
     private BufferedOutputStream output;
     private volatile boolean closed;
     private Thread thread;
+    private Thread heartbeatThread;
 
     TerminalSocketClient(Listener listener) {
         this.listener = listener;
@@ -97,6 +103,7 @@ final class TerminalSocketClient {
                     "rows", rows
             );
             listener.onConnected();
+            startHeartbeat();
             readLoop();
         } catch (Exception error) {
             if (!closed) {
@@ -123,10 +130,38 @@ final class TerminalSocketClient {
         if (port == -1) {
             port = "wss".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
         }
+        Socket raw = new Socket();
+        raw.connect(new InetSocketAddress(uri.getHost(), port), SOCKET_CONNECT_TIMEOUT_MS);
+        Socket connected;
         if ("wss".equalsIgnoreCase(uri.getScheme())) {
-            return SSLSocketFactory.getDefault().createSocket(uri.getHost(), port);
+            connected = SSLSocketFactory.getDefault().createSocket(raw, uri.getHost(), port, true);
+        } else {
+            connected = raw;
         }
-        return new Socket(uri.getHost(), port);
+        connected.setKeepAlive(true);
+        connected.setTcpNoDelay(true);
+        connected.setSoTimeout(SOCKET_READ_TIMEOUT_MS);
+        return connected;
+    }
+
+    private void startHeartbeat() {
+        heartbeatThread = new Thread(() -> {
+            while (!closed) {
+                try {
+                    Thread.sleep(HEARTBEAT_INTERVAL_MS);
+                    if (!closed) {
+                        sendFrame(9, new byte[0]);
+                    }
+                } catch (InterruptedException ignored) {
+                    Thread.currentThread().interrupt();
+                    return;
+                } catch (Exception error) {
+                    closeSocketQuietly();
+                    return;
+                }
+            }
+        }, "terminal-ws-heartbeat");
+        heartbeatThread.start();
     }
 
     private void handshake(URI uri) throws Exception {
@@ -279,6 +314,10 @@ final class TerminalSocketClient {
     }
 
     private void closeSocketQuietly() {
+        if (heartbeatThread != null) {
+            heartbeatThread.interrupt();
+            heartbeatThread = null;
+        }
         try {
             if (socket != null) {
                 socket.close();
