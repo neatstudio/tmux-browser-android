@@ -97,7 +97,8 @@ final class AppEventSocketClient {
         raw.connect(new InetSocketAddress(uri.getHost(), port), SOCKET_CONNECT_TIMEOUT_MS);
         Socket connected;
         if ("wss".equalsIgnoreCase(uri.getScheme())) {
-            connected = SSLSocketFactory.getDefault().createSocket(raw, uri.getHost(), port, true);
+            connected = ((SSLSocketFactory) SSLSocketFactory.getDefault())
+                    .createSocket(raw, uri.getHost(), port, true);
         } else {
             connected = raw;
         }
