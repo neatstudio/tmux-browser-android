@@ -62,7 +62,7 @@ public final class MainActivity extends Activity {
     private static final int MAX_TERMINAL_COLS = 140;
     private static final int MIN_TERMINAL_ROWS = 8;
     private static final int MAX_TERMINAL_ROWS = 80;
-    private static final int TERMINAL_KEYS_HEIGHT_DP = 76;
+    private static final int TERMINAL_KEYS_HEIGHT_DP = 64;
     private static final int STATUS_NORMAL = 0;
     private static final int STATUS_BUSY = 1;
     private static final int STATUS_SUCCESS = 2;
@@ -1596,10 +1596,10 @@ public final class MainActivity extends Activity {
 
         terminalKeyPageButton = terminalPageButton();
         LinearLayout.LayoutParams pageParams = new LinearLayout.LayoutParams(
-                dp(70),
-                dp(48)
+                dp(62),
+                dp(42)
         );
-        pageParams.rightMargin = dp(6);
+        pageParams.rightMargin = dp(4);
         row.addView(terminalKeyPageButton, pageParams);
 
         inputField = new EditText(this);
@@ -1608,7 +1608,7 @@ public final class MainActivity extends Activity {
         inputField.setHint("type, edit, paste");
         inputField.setSingleLine(false);
         inputField.setMinLines(1);
-        inputField.setMaxLines(3);
+        inputField.setMaxLines(2);
         inputField.setCursorVisible(true);
         inputField.setFocusableInTouchMode(true);
         inputField.setGravity(Gravity.TOP | Gravity.START);
@@ -1634,13 +1634,9 @@ public final class MainActivity extends Activity {
             return false;
         });
         row.addView(inputField, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        row.addView(toolbarButton("Type", view -> sendTypedText()), new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                dp(48)
-        ));
         row.addView(toolbarButton("Send", view -> sendLine()), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-                dp(48)
+                dp(42)
         ));
         bar.addView(row, matchWrap());
         return bar;
@@ -2413,21 +2409,6 @@ public final class MainActivity extends Activity {
         setStatus("Sent " + text.length() + " chars");
     }
 
-    private void sendTypedText() {
-        if (inputField == null) {
-            return;
-        }
-        String text = inputField.getText().toString();
-        if (text.isEmpty()) {
-            return;
-        }
-        String normalized = text.replace("\r\n", "\n").replace('\r', '\n');
-        terminalFollowOutput = true;
-        sendTerminalInput(normalized);
-        inputField.setText("");
-        setStatus("Typed " + text.length() + " chars");
-    }
-
     private void sendTerminalInput(String data) {
         if (activeSessionName == null) {
             return;
@@ -2726,9 +2707,9 @@ public final class MainActivity extends Activity {
     private Button terminalPageButton() {
         Button button = toolbarButton("", view -> setTerminalKeyPage(terminalKeyPage + 1));
         button.setTextSize(10);
-        button.setPadding(dp(5), 0, dp(5), 0);
-        button.setMinWidth(dp(70));
-        button.setMinimumWidth(dp(70));
+        button.setPadding(dp(4), 0, dp(4), 0);
+        button.setMinWidth(dp(62));
+        button.setMinimumWidth(dp(62));
         button.setOnLongClickListener(view -> {
             view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
             setTerminalKeyPage(terminalKeyPage - 1);
@@ -2744,7 +2725,7 @@ public final class MainActivity extends Activity {
 
     private void updateTerminalPageButton(Button button) {
         if (button != null) {
-            button.setText("‹ " + accessoryPageName() + " ›");
+            button.setText(accessoryPageName());
         }
     }
 
@@ -2761,7 +2742,7 @@ public final class MainActivity extends Activity {
         input.setTextColor(COLOR_TEXT);
         input.setHintTextColor(COLOR_TEXT_DIM);
         input.setTextSize(14);
-        input.setPadding(dp(10), dp(8), dp(10), dp(8));
+        input.setPadding(dp(9), dp(6), dp(9), dp(6));
         input.setBackground(inputBackground());
     }
 
@@ -2823,19 +2804,19 @@ public final class MainActivity extends Activity {
 
     private void addSoftButton(LinearLayout row, String label, View.OnClickListener listener) {
         Button button = toolbarButton(label, listener);
-        button.setTextSize(isArrowLabel(label) ? 16 : 10);
-        button.setPadding(dp(5), 0, dp(5), 0);
-        int width = "Space".equals(label) ? 62 : (isArrowLabel(label) ? 36 : 42);
+        button.setTextSize(isArrowLabel(label) ? 15 : 9);
+        button.setPadding(dp(4), 0, dp(4), 0);
+        int width = "Space".equals(label) ? 56 : (isArrowLabel(label) ? 32 : 38);
         button.setMinWidth(dp(width));
         button.setMinimumWidth(dp(width));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-                dp(30)
+                dp(27)
         );
-        params.leftMargin = dp(2);
-        params.rightMargin = dp(2);
+        params.leftMargin = dp(1);
+        params.rightMargin = dp(1);
         params.topMargin = dp(2);
-        params.bottomMargin = dp(2);
+        params.bottomMargin = dp(1);
         row.addView(button, params);
     }
 
