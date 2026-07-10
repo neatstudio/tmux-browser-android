@@ -1160,7 +1160,7 @@ public final class MainActivity extends Activity {
         terminalText.setLineSpacing(0, 1.05f);
         terminalText.setGravity(Gravity.BOTTOM | Gravity.START);
         terminalText.setTextIsSelectable(terminalSelectionEnabled);
-        terminalText.setPadding(dp(10), dp(10), dp(10), dp(10));
+        terminalText.setPadding(dp(2), dp(8), dp(2), dp(8));
         terminalText.setBackgroundColor(COLOR_TERMINAL_BG);
         terminalScroll.addView(terminalText, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -2418,7 +2418,8 @@ public final class MainActivity extends Activity {
         if (lineHeight <= 0) {
             lineHeight = dp(16);
         }
-        int cols = clamp((int) Math.floor((width - horizontalPadding) / charWidth) - 1, MIN_TERMINAL_COLS, MAX_TERMINAL_COLS);
+        int usableWidth = Math.max(1, width - horizontalPadding);
+        int cols = clamp((int) Math.floor(usableWidth / charWidth), MIN_TERMINAL_COLS, MAX_TERMINAL_COLS);
         int rows = clamp((height - verticalPadding) / lineHeight, MIN_TERMINAL_ROWS, MAX_TERMINAL_ROWS);
         if (cols == terminalCols && rows == terminalRows && !forceSend) {
             return;
