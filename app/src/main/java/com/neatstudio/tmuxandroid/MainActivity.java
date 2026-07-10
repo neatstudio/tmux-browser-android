@@ -135,6 +135,8 @@ public final class MainActivity extends Activity {
     private String terminalEventStatus = "";
     private String activeMainPage = PAGE_SERVERS;
     private String pendingImageUploadSession;
+    private int lastSessionCount = -1;
+    private int lastActiveSessionCount = -1;
     private TerminalScreenBuffer terminalScreen = new TerminalScreenBuffer(DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS);
     private final StringBuilder queuedTerminalInput = new StringBuilder();
     private boolean terminalConnected;
@@ -261,16 +263,12 @@ public final class MainActivity extends Activity {
             content.addView(serverProfileCard(url, !isPresetServer(url)), matchWrap());
         }
 
-        content.addView(createServerFooterActions());
+        content.addView(createServerUtilityRow());
         scroll.addView(content);
         root.addView(scroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
                 1
-        ));
-        root.addView(statusText, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(28)
         ));
         setStatus("Servers");
     }
@@ -281,7 +279,7 @@ public final class MainActivity extends Activity {
         LinearLayout card = new LinearLayout(this);
         card.setOrientation(LinearLayout.HORIZONTAL);
         card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(12), dp(11), dp(8), dp(11));
+        card.setPadding(dp(13), 0, 0, 0);
         card.setBackground(cardBackground());
         card.setHapticFeedbackEnabled(true);
         card.setOnClickListener(view -> {
@@ -291,50 +289,56 @@ public final class MainActivity extends Activity {
         });
 
         TextView icon = new TextView(this);
-        icon.setText("▣");
-        icon.setTextColor(selected ? COLOR_ACCENT : COLOR_TEXT_MUTED);
-        icon.setTextSize(18);
+        icon.setText("▥");
+        icon.setTextColor(COLOR_TEXT_MUTED);
+        icon.setTextSize(20);
         icon.setGravity(Gravity.CENTER);
-        icon.setBackground(rounded(selected ? COLOR_ACCENT_DARK : COLOR_CARD_ALT, 8, Color.TRANSPARENT, 0));
+        icon.setBackground(rounded(COLOR_CARD_ALT, 8, Color.TRANSPARENT, 0));
         card.addView(icon, new LinearLayout.LayoutParams(dp(40), dp(40)));
 
         LinearLayout textBlock = new LinearLayout(this);
         textBlock.setOrientation(LinearLayout.VERTICAL);
         textBlock.setPadding(dp(11), 0, dp(6), 0);
+        LinearLayout nameRow = new LinearLayout(this);
+        nameRow.setOrientation(LinearLayout.HORIZONTAL);
+        nameRow.setGravity(Gravity.CENTER_VERTICAL);
+        TextView dot = new TextView(this);
+        dot.setText("●");
+        dot.setTextColor(selected ? COLOR_ACCENT : COLOR_TEXT_DIM);
+        dot.setTextSize(10);
+        nameRow.addView(dot);
         TextView title = new TextView(this);
-        title.setText((selected ? "●  " : "○  ") + label);
+        title.setText("  " + serverDisplayName(url));
         title.setTextColor(COLOR_TEXT);
-        title.setTextSize(15);
+        title.setTextSize(14);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         title.setSingleLine(true);
+        nameRow.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         TextView meta = bodyText(url);
         meta.setTextSize(11);
         meta.setTypeface(Typeface.MONOSPACE);
         meta.setSingleLine(true);
-        textBlock.addView(title);
+        meta.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+        textBlock.addView(nameRow);
         textBlock.addView(meta);
         card.addView(textBlock, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
         LinearLayout stateBlock = new LinearLayout(this);
         stateBlock.setOrientation(LinearLayout.VERTICAL);
         stateBlock.setGravity(Gravity.END);
-        TextView port = new TextView(this);
-        port.setText("3000");
-        port.setTextColor(selected ? COLOR_ACCENT : COLOR_TEXT_MUTED);
-        port.setTextSize(12);
-        port.setTypeface(Typeface.MONOSPACE);
-        TextView state = new TextView(this);
-        state.setText(selected ? "ACTIVE" : (removable ? "SAVED" : "PRESET"));
-        state.setTextColor(COLOR_TEXT_DIM);
-        state.setTextSize(9);
-        state.setTypeface(Typeface.MONOSPACE);
-        stateBlock.addView(port);
-        stateBlock.addView(state);
+        TextView active = new TextView(this);
+        active.setText(selected && lastActiveSessionCount >= 0 ? String.valueOf(lastActiveSessionCount) : "0");
+        active.setTextColor(COLOR_ACCENT);
+        active.setTextSize(13);
+        active.setTypeface(Typeface.MONOSPACE);
+        TextView total = new TextView(this);
+        total.setText("of " + (selected && lastSessionCount >= 0 ? lastSessionCount : 0));
+        total.setTextColor(COLOR_TEXT_DIM);
+        total.setTextSize(9);
+        total.setTypeface(Typeface.MONOSPACE);
+        stateBlock.addView(active);
+        stateBlock.addView(total);
         card.addView(stateBlock);
-
-        Button probe = terminalToolButton("↻", view -> probeSingleServer(url));
-        probe.setContentDescription("Probe " + label);
-        card.addView(probe);
         if (removable) {
             Button remove = terminalToolButton("×", view -> confirmRemoveSavedServer(url));
             remove.setContentDescription("Remove " + label);
@@ -351,7 +355,7 @@ public final class MainActivity extends Activity {
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
+                dp(68)
         );
         params.bottomMargin = dp(10);
         card.setLayoutParams(params);
@@ -382,10 +386,6 @@ public final class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
                 1
-        ));
-        root.addView(statusText, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(28)
         ));
         setStatus("Sessions");
     }
@@ -440,35 +440,14 @@ public final class MainActivity extends Activity {
         return header;
     }
 
-    private View createServerFooterActions() {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(12), dp(10), dp(12), dp(10));
-        card.setBackground(cardBackground());
-
-        TextView label = new TextView(this);
-        label.setText("ACTIVE API");
-        label.setTextColor(COLOR_TEXT_DIM);
-        label.setTextSize(9);
-        label.setTypeface(Typeface.MONOSPACE);
-        TextView value = bodyText(getServerUrl());
-        value.setTextColor(COLOR_TEXT);
-        value.setTextSize(12);
-        value.setTypeface(Typeface.MONOSPACE);
-        value.setSingleLine(true);
-        value.setEllipsize(TextUtils.TruncateAt.MIDDLE);
-
+    private View createServerUtilityRow() {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(0, dp(10), 0, 0);
+        row.setPadding(0, dp(4), 0, 0);
         row.addView(compactButton("Probe all", view -> probeServerProfiles()));
         row.addView(compactButton("Update", view -> renderUpdateScreen()));
         row.addView(compactButton("More", view -> showMainNavigation()));
-
-        card.addView(label);
-        card.addView(value);
-        card.addView(row);
-        return card;
+        return row;
     }
 
     private View createSessionPageHeader() {
@@ -520,24 +499,41 @@ public final class MainActivity extends Activity {
 
     private View createNewGroupCard() {
         LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.HORIZONTAL);
-        card.setGravity(Gravity.CENTER_VERTICAL);
-        card.setPadding(dp(12), dp(11), dp(10), dp(11));
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(12), dp(11), dp(12), dp(12));
         card.setBackground(cardBackground());
 
-        LinearLayout textBlock = new LinearLayout(this);
-        textBlock.setOrientation(LinearLayout.VERTICAL);
         TextView label = new TextView(this);
-        label.setText("NEW PROJECT GROUP");
+        label.setText("NEW GROUP");
         label.setTextColor(COLOR_TEXT_DIM);
         label.setTextSize(9);
         label.setTypeface(Typeface.MONOSPACE);
-        TextView detail = bodyText("Group related tmux sessions");
-        detail.setTextSize(12);
-        textBlock.addView(label);
-        textBlock.addView(detail);
-        card.addView(textBlock, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        card.addView(compactButton("Create", view -> promptCreateKanbanProject()));
+        card.addView(label);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, dp(7), 0, 0);
+        EditText input = new EditText(this);
+        input.setHint("group name");
+        input.setSingleLine(true);
+        input.setInputType(InputType.TYPE_CLASS_TEXT);
+        styleInput(input);
+        row.addView(input, new LinearLayout.LayoutParams(0, dp(40), 1));
+        Button create = compactButton("Create", view -> {
+            String name = input.getText().toString().trim();
+            if (name.isEmpty()) {
+                showMessage("Group name is empty");
+                return;
+            }
+            runApiAction("Create kanban project", () -> api.createKanbanProject(name, "~", ""));
+        });
+        LinearLayout.LayoutParams createParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                dp(40)
+        );
+        createParams.leftMargin = dp(8);
+        row.addView(create, createParams);
+        card.addView(row, matchWrap());
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1171,6 +1167,14 @@ public final class MainActivity extends Activity {
                 }
                 String finalProjects = projects;
                 runOnUiThread(() -> {
+                    lastSessionCount = sessions.size();
+                    lastActiveSessionCount = 0;
+                    for (SessionSummary session : sessions) {
+                        String status = session.status == null ? "" : session.status.toLowerCase(java.util.Locale.ROOT);
+                        if (status.contains("attach") || status.contains("active")) {
+                            lastActiveSessionCount++;
+                        }
+                    }
                     if (sessionGroupList != null) {
                         renderGroupedSessionList(sessions, finalProjects);
                     } else {
@@ -1458,6 +1462,11 @@ public final class MainActivity extends Activity {
         row.setBackground(cardBackground());
         row.setHapticFeedbackEnabled(true);
         row.setOnClickListener(view -> openTerminal(session.name));
+        row.setOnLongClickListener(view -> {
+            view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            showSessionActions(session.name);
+            return true;
+        });
 
         boolean attached = session.status != null
                 && (session.status.toLowerCase(java.util.Locale.ROOT).contains("attach")
@@ -1508,9 +1517,9 @@ public final class MainActivity extends Activity {
         textBlock.addView(meta);
         row.addView(textBlock, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
-        Button more = terminalToolButton("⋯", view -> showSessionActions(session.name));
-        more.setContentDescription("Session actions");
-        row.addView(more);
+        Button move = terminalToolButton("⇄", view -> promptAddKanbanSession(session.name));
+        move.setContentDescription("Move " + session.name + " to project");
+        row.addView(move);
         Button kill = terminalToolButton("×", view -> confirmKill(session.name));
         kill.setContentDescription("Kill session");
         kill.setTextColor(COLOR_DANGER);
@@ -1625,10 +1634,6 @@ public final class MainActivity extends Activity {
                 0,
                 1
         ));
-        root.addView(statusText, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(28)
-        ));
         terminalComposerBar = createComposerBar();
         root.addView(terminalComposerBar, matchWrap());
         root.addView(createAccessoryBar(), new LinearLayout.LayoutParams(
@@ -1687,8 +1692,7 @@ public final class MainActivity extends Activity {
                 dp(13)
         ));
         bar.addView(titleBlock, new LinearLayout.LayoutParams(0, dp(32), 1));
-        bar.addView(terminalToolButton("↻", view -> connectTerminal(sessionName)));
-        bar.addView(terminalToolButton("⋯", view -> showTerminalActions(sessionName)));
+        bar.addView(terminalToolButton("☰", view -> showTerminalActions(sessionName)));
         return bar;
     }
 
@@ -1982,6 +1986,7 @@ public final class MainActivity extends Activity {
 
     private void showTerminalActions(String sessionName) {
         String[] items = {
+                "Reconnect",
                 "Clear local view and tmux history",
                 "Split horizontal",
                 "Split vertical",
@@ -2000,47 +2005,50 @@ public final class MainActivity extends Activity {
                 .setItems(items, (dialog, which) -> {
                     switch (which) {
                         case 0:
+                            connectTerminal(sessionName);
+                            break;
+                        case 1:
                             terminalScreen.clear();
                             terminalText.setText("");
                             if (terminalSocket != null) {
                                 terminalSocket.clearHistory();
                             }
                             break;
-                        case 1:
+                        case 2:
                             runApiAction("Split horizontal", () -> api.splitPane(sessionName, "horizontal"));
                             break;
-                        case 2:
+                        case 3:
                             runApiAction("Split vertical", () -> api.splitPane(sessionName, "vertical"));
                             break;
-                        case 3:
+                        case 4:
                             if (terminalSocket != null) {
                                 terminalSocket.scroll(-terminalRows);
                             }
                             break;
-                        case 4:
+                        case 5:
                             if (terminalSocket != null) {
                                 terminalSocket.scroll(terminalRows);
                             }
                             break;
-                        case 5:
+                        case 6:
                             showRaw("Session status", () -> api.sessionStatus(sessionName));
                             break;
-                        case 6:
+                        case 7:
                             promptSendCommand(sessionName);
                             break;
-                        case 7:
+                        case 8:
                             sendTerminalInput("\u0002");
                             break;
-                        case 8:
+                        case 9:
                             sendTerminalInput("\u0002d");
                             break;
-                        case 9:
+                        case 10:
                             sendTerminalInput("\u0002c");
                             break;
-                        case 10:
+                        case 11:
                             sendTerminalInput("\u0002n");
                             break;
-                        case 11:
+                        case 12:
                             sendTerminalInput("\u0002p");
                             break;
                         default:
@@ -2059,14 +2067,6 @@ public final class MainActivity extends Activity {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.BOTTOM);
-
-        terminalKeyPageButton = terminalPageButton();
-        LinearLayout.LayoutParams pageParams = new LinearLayout.LayoutParams(
-                dp(42),
-                dp(40)
-        );
-        pageParams.rightMargin = dp(6);
-        row.addView(terminalKeyPageButton, pageParams);
 
         inputField = new EditText(this);
         inputField.setTextColor(COLOR_TEXT);
@@ -2699,58 +2699,22 @@ public final class MainActivity extends Activity {
     }
 
     private void addAccessoryPageKeys(LinearLayout row) {
-        switch (terminalKeyPage) {
-            case 1:
-                addSoftKey(row, "Esc", "\u001b");
-                addSoftKey(row, "Tab", "\t");
-                addSoftKey(row, "C-c", "\u0003");
-                addSoftKey(row, "C-d", "\u0004");
-                addSoftKey(row, "C-z", "\u001a");
-                addSoftKey(row, "C-l", "\u000c");
-                addSoftKey(row, "C-r", "\u0012");
-                addSoftKey(row, "C-a", "\u0001");
-                addSoftKey(row, "C-e", "\u0005");
-                break;
-            case 2:
-                addSoftKey(row, "←", "\u001b[D");
-                addSoftKey(row, "→", "\u001b[C");
-                addSoftKey(row, "↑", "\u001b[A");
-                addSoftKey(row, "↓", "\u001b[B");
-                addSoftKey(row, "Home", "\u001b[H");
-                addSoftKey(row, "End", "\u001b[F");
-                addSoftKey(row, "Pg↑", "\u001b[5~");
-                addSoftKey(row, "Pg↓", "\u001b[6~");
-                addSoftKey(row, "Prev", "\u0002p");
-                addSoftKey(row, "Next", "\u0002n");
-                break;
-            case 3:
-                addTextKey(row, "~", "~");
-                addTextKey(row, "/", "/");
-                addTextKey(row, "-", "-");
-                addTextKey(row, "_", "_");
-                addTextKey(row, ".", ".");
-                addTextKey(row, "|", "|");
-                addTextKey(row, "&", "&");
-                addTextKey(row, ";", ";");
-                addTextKey(row, "$", "$");
-                addTextKey(row, "Space", " ");
-                break;
-            case 0:
-            default:
-                addComposerButton(row, "←", () -> moveComposerCursor(-1));
-                addComposerButton(row, "→", () -> moveComposerCursor(1));
-                addSoftKey(row, "↑", "\u001b[A");
-                addSoftKey(row, "↓", "\u001b[B");
-                addSoftKey(row, "Esc", "\u001b");
-                addSoftKey(row, "Tab", "\t");
-                addSoftKey(row, "Enter", TERMINAL_ENTER);
-                addSoftButton(row, "Paste", view -> pasteClipboard());
-                addAccessoryButton(row, "⌫", view -> backspaceComposerText());
-                addAccessoryButton(row, "⌄", view -> hideKeyboard());
-                addAccessoryButton(row, "⇣", view -> scrollTerminalBottom());
-                addAccessoryButton(row, "Sel", view -> toggleTerminalSelection());
-                break;
-        }
+        addAccessoryButton(row, "ctrl", view -> sendTerminalInput("\u0002"));
+        addSoftKey(row, "esc", "\u001b");
+        addSoftKey(row, "tab", "\t");
+        addTextKey(row, "~", "~");
+        addTextKey(row, "/", "/");
+        addTextKey(row, "-", "-");
+        addTextKey(row, "|", "|");
+        addSoftKey(row, "C-c", "\u0003");
+        addSoftKey(row, "C-d", "\u0004");
+        addSoftKey(row, "C-z", "\u001a");
+        addSoftKey(row, "C-l", "\u000c");
+        addComposerButton(row, "←", () -> moveComposerCursor(-1));
+        addComposerButton(row, "→", () -> moveComposerCursor(1));
+        addSoftKey(row, "↑", "\u001b[A");
+        addSoftKey(row, "↓", "\u001b[B");
+        addSoftButton(row, "Paste", view -> pasteClipboard());
     }
 
     private String accessoryPageName() {
