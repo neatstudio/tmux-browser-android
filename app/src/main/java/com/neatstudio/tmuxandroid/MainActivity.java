@@ -48,6 +48,8 @@ import org.json.JSONObject;
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -64,27 +66,27 @@ public final class MainActivity extends Activity {
     private static final int MAX_TERMINAL_COLS = 140;
     private static final int MIN_TERMINAL_ROWS = 8;
     private static final int MAX_TERMINAL_ROWS = 80;
-    private static final int TERMINAL_KEYS_HEIGHT_DP = 64;
+    private static final int TERMINAL_KEYS_HEIGHT_DP = 44;
     private static final int STATUS_NORMAL = 0;
     private static final int STATUS_BUSY = 1;
     private static final int STATUS_SUCCESS = 2;
     private static final int STATUS_ERROR = 3;
     private static final long TERMINAL_RENDER_INTERVAL_MS = 80L;
     private static final long[] SOCKET_RECONNECT_DELAYS_MS = {1000L, 2000L, 4000L, 8000L, 15000L};
-    private static final int COLOR_APP_BG = Color.rgb(9, 11, 13);
-    private static final int COLOR_BAR = Color.rgb(15, 18, 21);
-    private static final int COLOR_PANEL = Color.rgb(22, 26, 30);
-    private static final int COLOR_CARD = Color.rgb(26, 31, 36);
-    private static final int COLOR_CARD_ALT = Color.rgb(31, 37, 43);
-    private static final int COLOR_FIELD = Color.rgb(12, 15, 18);
-    private static final int COLOR_TERMINAL_BG = Color.rgb(2, 4, 6);
-    private static final int COLOR_BORDER = Color.rgb(55, 64, 72);
-    private static final int COLOR_BORDER_SOFT = Color.rgb(39, 46, 53);
-    private static final int COLOR_TEXT = Color.rgb(238, 242, 246);
-    private static final int COLOR_TEXT_MUTED = Color.rgb(151, 163, 174);
-    private static final int COLOR_TEXT_DIM = Color.rgb(112, 124, 136);
-    private static final int COLOR_ACCENT = Color.rgb(65, 218, 199);
-    private static final int COLOR_ACCENT_DARK = Color.rgb(13, 61, 55);
+    private static final int COLOR_APP_BG = Color.rgb(18, 20, 24);
+    private static final int COLOR_BAR = Color.rgb(20, 23, 27);
+    private static final int COLOR_PANEL = Color.rgb(25, 28, 33);
+    private static final int COLOR_CARD = Color.rgb(29, 33, 39);
+    private static final int COLOR_CARD_ALT = Color.rgb(35, 39, 46);
+    private static final int COLOR_FIELD = Color.rgb(14, 17, 21);
+    private static final int COLOR_TERMINAL_BG = Color.rgb(11, 14, 19);
+    private static final int COLOR_BORDER = Color.rgb(54, 59, 67);
+    private static final int COLOR_BORDER_SOFT = Color.rgb(43, 48, 55);
+    private static final int COLOR_TEXT = Color.rgb(242, 244, 247);
+    private static final int COLOR_TEXT_MUTED = Color.rgb(158, 166, 177);
+    private static final int COLOR_TEXT_DIM = Color.rgb(112, 121, 133);
+    private static final int COLOR_ACCENT = Color.rgb(103, 218, 145);
+    private static final int COLOR_ACCENT_DARK = Color.rgb(25, 67, 43);
     private static final int COLOR_ACCENT_WARM = Color.rgb(243, 185, 82);
     private static final int COLOR_SUCCESS = Color.rgb(91, 213, 139);
     private static final int COLOR_DANGER = Color.rgb(235, 103, 111);
@@ -119,6 +121,7 @@ public final class MainActivity extends Activity {
     private TextView statusText;
     private TextView sessionSummaryText;
     private LinearLayout projectList;
+    private LinearLayout sessionGroupList;
     private TextView terminalText;
     private TextView terminalMetaText;
     private ScrollView terminalScroll;
@@ -238,11 +241,8 @@ public final class MainActivity extends Activity {
         activeSessionName = null;
         activeMainPage = PAGE_SERVERS;
         projectList = null;
+        sessionGroupList = null;
         root.removeAllViews();
-        root.addView(createMainTabs(PAGE_SERVERS), new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(48)
-        ));
         root.addView(progressBar, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(3)
@@ -250,24 +250,18 @@ public final class MainActivity extends Activity {
 
         ScrollView scroll = new ScrollView(this);
         LinearLayout content = pageContent();
-        content.addView(infoBlock(
-                "Server",
-                "Active API: " + getServerUrl() + "\nHTTP and WebSocket use port 3000."
+        List<String> serverUrls = savedServerUrls();
+        content.addView(createPageHeader(
+                serverUrls.size() + " nodes",
+                "Servers",
+                "＋ Add",
+                view -> promptCustomServer()
         ));
-
-        content.addView(sectionTitle("Tailscale servers"));
-        for (String url : SERVER_PROFILES) {
-            content.addView(serverProfileCard(url), matchWrap());
+        for (String url : serverUrls) {
+            content.addView(serverProfileCard(url, !isPresetServer(url)), matchWrap());
         }
 
-        content.addView(sectionTitle("Custom server"));
-        content.addView(createServerBar());
-        content.addView(actionPanel(
-                actionButton("Open sessions", view -> openSessionPage()),
-                actionButton("Probe all", view -> probeServerProfiles()),
-                actionButton("Health", view -> showRaw("Health", () -> api.health())),
-                actionButton("Update", view -> renderUpdateScreen())
-        ));
+        content.addView(createServerFooterActions());
         scroll.addView(content);
         root.addView(scroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -281,37 +275,85 @@ public final class MainActivity extends Activity {
         setStatus("Servers");
     }
 
-    private View serverProfileCard(String url) {
+    private View serverProfileCard(String url, boolean removable) {
         String label = url.replace("http://", "").replace(":3000", "");
+        boolean selected = url.equals(getServerUrl());
         LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(12), dp(10), dp(12), dp(10));
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(12), dp(11), dp(8), dp(11));
         card.setBackground(cardBackground());
-
-        TextView title = new TextView(this);
-        title.setText(label);
-        title.setTextColor(COLOR_TEXT);
-        title.setTextSize(16);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        TextView meta = bodyText(url);
-        meta.setPadding(0, dp(4), 0, dp(8));
-
-        LinearLayout actions = new LinearLayout(this);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.addView(toolbarButton("Use", view -> {
+        card.setHapticFeedbackEnabled(true);
+        card.setOnClickListener(view -> {
+            view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
             selectServer(url);
             openSessionPage();
-        }));
-        actions.addView(toolbarButton("Probe", view -> probeSingleServer(url)));
+        });
 
-        card.addView(title);
-        card.addView(meta);
-        card.addView(actions);
+        TextView icon = new TextView(this);
+        icon.setText("▣");
+        icon.setTextColor(selected ? COLOR_ACCENT : COLOR_TEXT_MUTED);
+        icon.setTextSize(18);
+        icon.setGravity(Gravity.CENTER);
+        icon.setBackground(rounded(selected ? COLOR_ACCENT_DARK : COLOR_CARD_ALT, 8, Color.TRANSPARENT, 0));
+        card.addView(icon, new LinearLayout.LayoutParams(dp(40), dp(40)));
+
+        LinearLayout textBlock = new LinearLayout(this);
+        textBlock.setOrientation(LinearLayout.VERTICAL);
+        textBlock.setPadding(dp(11), 0, dp(6), 0);
+        TextView title = new TextView(this);
+        title.setText((selected ? "●  " : "○  ") + label);
+        title.setTextColor(COLOR_TEXT);
+        title.setTextSize(15);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setSingleLine(true);
+        TextView meta = bodyText(url);
+        meta.setTextSize(11);
+        meta.setTypeface(Typeface.MONOSPACE);
+        meta.setSingleLine(true);
+        textBlock.addView(title);
+        textBlock.addView(meta);
+        card.addView(textBlock, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+        LinearLayout stateBlock = new LinearLayout(this);
+        stateBlock.setOrientation(LinearLayout.VERTICAL);
+        stateBlock.setGravity(Gravity.END);
+        TextView port = new TextView(this);
+        port.setText("3000");
+        port.setTextColor(selected ? COLOR_ACCENT : COLOR_TEXT_MUTED);
+        port.setTextSize(12);
+        port.setTypeface(Typeface.MONOSPACE);
+        TextView state = new TextView(this);
+        state.setText(selected ? "ACTIVE" : (removable ? "SAVED" : "PRESET"));
+        state.setTextColor(COLOR_TEXT_DIM);
+        state.setTextSize(9);
+        state.setTypeface(Typeface.MONOSPACE);
+        stateBlock.addView(port);
+        stateBlock.addView(state);
+        card.addView(stateBlock);
+
+        Button probe = terminalToolButton("↻", view -> probeSingleServer(url));
+        probe.setContentDescription("Probe " + label);
+        card.addView(probe);
+        if (removable) {
+            Button remove = terminalToolButton("×", view -> confirmRemoveSavedServer(url));
+            remove.setContentDescription("Remove " + label);
+            remove.setTextColor(COLOR_DANGER);
+            card.addView(remove);
+        }
+
+        TextView chevron = new TextView(this);
+        chevron.setText("›");
+        chevron.setTextColor(COLOR_TEXT_DIM);
+        chevron.setTextSize(22);
+        chevron.setGravity(Gravity.CENTER);
+        card.addView(chevron, new LinearLayout.LayoutParams(dp(24), dp(36)));
+
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         );
-        params.bottomMargin = dp(8);
+        params.bottomMargin = dp(10);
         card.setLayoutParams(params);
         return card;
     }
@@ -320,11 +362,8 @@ public final class MainActivity extends Activity {
         closeTerminalSocket();
         activeSessionName = null;
         activeMainPage = PAGE_SESSIONS;
+        projectList = null;
         root.removeAllViews();
-        root.addView(createMainTabs(PAGE_SESSIONS), new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(48)
-        ));
         root.addView(progressBar, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(3)
@@ -332,24 +371,12 @@ public final class MainActivity extends Activity {
 
         ScrollView scroll = new ScrollView(this);
         LinearLayout content = pageContent();
-        content.addView(sessionSummaryBlock());
-        content.addView(sectionTitle("Session actions"));
-        content.addView(actionPanel(
-                actionButton("New session", view -> promptCreateSession()),
-                actionButton("Refresh", view -> refreshSessions()),
-                actionButton("New project", view -> promptCreateKanbanProject()),
-                actionButton("Projects", view -> renderProjectsScreen())
-        ));
-        content.addView(sectionTitle("Tmux sessions"));
-        LinearLayout list = new LinearLayout(this);
-        list.setOrientation(LinearLayout.VERTICAL);
-        list.setTag("session-list");
-        content.addView(list);
-        content.addView(sectionTitle("Project groups"));
-        projectList = new LinearLayout(this);
-        projectList.setOrientation(LinearLayout.VERTICAL);
-        projectList.addView(projectStateText("Loading after sessions..."), matchWrap());
-        content.addView(projectList, matchWrap());
+        content.addView(createSessionPageHeader());
+        sessionGroupList = new LinearLayout(this);
+        sessionGroupList.setOrientation(LinearLayout.VERTICAL);
+        sessionGroupList.addView(projectStateText("Loading sessions and groups..."), matchWrap());
+        content.addView(sessionGroupList, matchWrap());
+        content.addView(createNewGroupCard(), matchWrap());
         scroll.addView(content);
         root.addView(scroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -366,7 +393,6 @@ public final class MainActivity extends Activity {
     private void openSessionPage() {
         renderSessionScreen();
         refreshSessions();
-        refreshProjects();
     }
 
     private View sessionSummaryBlock() {
@@ -378,11 +404,278 @@ public final class MainActivity extends Activity {
         return block;
     }
 
+    private View createPageHeader(
+            String eyebrow,
+            String titleText,
+            String actionLabel,
+            View.OnClickListener action
+    ) {
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.BOTTOM);
+        header.setPadding(dp(2), dp(6), dp(2), dp(18));
+
+        LinearLayout titleBlock = new LinearLayout(this);
+        titleBlock.setOrientation(LinearLayout.VERTICAL);
+        TextView eyebrowView = new TextView(this);
+        eyebrowView.setText(eyebrow.toUpperCase(java.util.Locale.ROOT));
+        eyebrowView.setTextColor(COLOR_TEXT_MUTED);
+        eyebrowView.setTextSize(10);
+        eyebrowView.setTypeface(Typeface.MONOSPACE);
+        TextView title = new TextView(this);
+        title.setText(titleText);
+        title.setTextColor(COLOR_TEXT);
+        title.setTextSize(25);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setIncludeFontPadding(false);
+        titleBlock.addView(eyebrowView);
+        titleBlock.addView(title);
+        header.addView(titleBlock, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+        Button button = primaryButton(actionLabel, action);
+        header.addView(button, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                dp(38)
+        ));
+        return header;
+    }
+
+    private View createServerFooterActions() {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(12), dp(10), dp(12), dp(10));
+        card.setBackground(cardBackground());
+
+        TextView label = new TextView(this);
+        label.setText("ACTIVE API");
+        label.setTextColor(COLOR_TEXT_DIM);
+        label.setTextSize(9);
+        label.setTypeface(Typeface.MONOSPACE);
+        TextView value = bodyText(getServerUrl());
+        value.setTextColor(COLOR_TEXT);
+        value.setTextSize(12);
+        value.setTypeface(Typeface.MONOSPACE);
+        value.setSingleLine(true);
+        value.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, dp(10), 0, 0);
+        row.addView(compactButton("Probe all", view -> probeServerProfiles()));
+        row.addView(compactButton("Update", view -> renderUpdateScreen()));
+        row.addView(compactButton("More", view -> showMainNavigation()));
+
+        card.addView(label);
+        card.addView(value);
+        card.addView(row);
+        return card;
+    }
+
+    private View createSessionPageHeader() {
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.VERTICAL);
+        header.setPadding(dp(2), dp(4), dp(2), dp(16));
+
+        Button back = toolbarButton("‹  Servers", view -> renderServerScreen());
+        back.setTextColor(COLOR_TEXT_MUTED);
+        back.setBackgroundColor(Color.TRANSPARENT);
+        back.setPadding(0, 0, dp(10), 0);
+        LinearLayout.LayoutParams backParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                dp(34)
+        );
+        backParams.bottomMargin = dp(5);
+        header.addView(back, backParams);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.BOTTOM);
+        LinearLayout titleBlock = new LinearLayout(this);
+        titleBlock.setOrientation(LinearLayout.VERTICAL);
+        TextView endpoint = new TextView(this);
+        endpoint.setText(getServerUrl().replace("http://", "").replace("https://", ""));
+        endpoint.setTextColor(COLOR_TEXT_MUTED);
+        endpoint.setTextSize(10);
+        endpoint.setTypeface(Typeface.MONOSPACE);
+        TextView title = new TextView(this);
+        title.setText(serverDisplayName(getServerUrl()));
+        title.setTextColor(COLOR_TEXT);
+        title.setTextSize(24);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setIncludeFontPadding(false);
+        titleBlock.addView(endpoint);
+        titleBlock.addView(title);
+        row.addView(titleBlock, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+        Button refresh = terminalToolButton("↻", view -> refreshSessions());
+        refresh.setContentDescription("Refresh sessions");
+        row.addView(refresh);
+        row.addView(primaryButton("＋ Session", view -> promptCreateSession()), new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                dp(38)
+        ));
+        header.addView(row, matchWrap());
+        return header;
+    }
+
+    private View createNewGroupCard() {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(dp(12), dp(11), dp(10), dp(11));
+        card.setBackground(cardBackground());
+
+        LinearLayout textBlock = new LinearLayout(this);
+        textBlock.setOrientation(LinearLayout.VERTICAL);
+        TextView label = new TextView(this);
+        label.setText("NEW PROJECT GROUP");
+        label.setTextColor(COLOR_TEXT_DIM);
+        label.setTextSize(9);
+        label.setTypeface(Typeface.MONOSPACE);
+        TextView detail = bodyText("Group related tmux sessions");
+        detail.setTextSize(12);
+        textBlock.addView(label);
+        textBlock.addView(detail);
+        card.addView(textBlock, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        card.addView(compactButton("Create", view -> promptCreateKanbanProject()));
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        params.topMargin = dp(8);
+        params.bottomMargin = dp(10);
+        card.setLayoutParams(params);
+        return card;
+    }
+
+    private Button primaryButton(String label, View.OnClickListener listener) {
+        Button button = toolbarButton(label, listener);
+        button.setTextColor(Color.rgb(14, 38, 24));
+        button.setTextSize(12);
+        button.setBackground(rounded(COLOR_ACCENT, 8, COLOR_ACCENT, 1));
+        button.setPadding(dp(12), 0, dp(12), 0);
+        return button;
+    }
+
+    private String serverDisplayName(String url) {
+        Uri parsed = Uri.parse(url);
+        String host = parsed.getHost();
+        if (host == null || host.isEmpty()) {
+            return "tmux server";
+        }
+        if (host.startsWith("100.")) {
+            int separator = host.lastIndexOf('.');
+            return separator >= 0 ? "node-" + host.substring(separator + 1) : "Tailscale node";
+        }
+        return host;
+    }
+
+    private void promptCustomServer() {
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setHint("100.64.0.x:3000");
+        input.setText(getServerUrl());
+        input.setSelectAllOnFocus(true);
+        styleInput(input);
+        new AlertDialog.Builder(this)
+                .setTitle("Add server")
+                .setView(input)
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Connect", (dialog, which) -> {
+                    String url = normalizeServerUrl(input.getText().toString());
+                    saveCustomServer(url);
+                    selectServer(url);
+                    openSessionPage();
+                })
+                .show();
+    }
+
+    private List<String> savedServerUrls() {
+        List<String> urls = new ArrayList<>();
+        Collections.addAll(urls, SERVER_PROFILES);
+        Set<String> custom = prefs.getStringSet("custom_server_urls", Collections.emptySet());
+        List<String> sortedCustom = new ArrayList<>(custom);
+        Collections.sort(sortedCustom);
+        for (String url : sortedCustom) {
+            if (!urls.contains(url)) {
+                urls.add(url);
+            }
+        }
+        String active = getServerUrl();
+        if (!urls.contains(active)) {
+            urls.add(0, active);
+        }
+        return urls;
+    }
+
+    private boolean isPresetServer(String url) {
+        for (String preset : SERVER_PROFILES) {
+            if (preset.equals(url)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void saveCustomServer(String url) {
+        if (isPresetServer(url)) {
+            return;
+        }
+        Set<String> custom = new HashSet<>(
+                prefs.getStringSet("custom_server_urls", Collections.emptySet())
+        );
+        custom.add(url);
+        prefs.edit().putStringSet("custom_server_urls", custom).apply();
+    }
+
+    private void confirmRemoveSavedServer(String url) {
+        new AlertDialog.Builder(this)
+                .setTitle("Remove server")
+                .setMessage("Remove " + url + " from this device?")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Remove", (dialog, which) -> {
+                    Set<String> custom = new HashSet<>(
+                            prefs.getStringSet("custom_server_urls", Collections.emptySet())
+                    );
+                    custom.remove(url);
+                    SharedPreferences.Editor editor = prefs.edit()
+                            .putStringSet("custom_server_urls", custom);
+                    if (url.equals(getServerUrl())) {
+                        editor.putString("server_url", DEFAULT_TAILSCALE_URL);
+                        api = new SessionApiClient(DEFAULT_TAILSCALE_URL);
+                        connectAppEvents();
+                    }
+                    editor.apply();
+                    renderServerScreen();
+                })
+                .show();
+    }
+
+    private void showMainNavigation() {
+        String[] items = {"Projects", "Tools", "Update", "About"};
+        new AlertDialog.Builder(this)
+                .setTitle("tmuxctl")
+                .setItems(items, (dialog, which) -> {
+                    if (which == 0) {
+                        renderProjectsScreen();
+                    } else if (which == 1) {
+                        renderToolsScreen();
+                    } else if (which == 2) {
+                        renderUpdateScreen();
+                    } else {
+                        renderAboutScreen();
+                    }
+                })
+                .show();
+    }
+
     private void renderToolsScreen() {
         closeTerminalSocket();
         activeSessionName = null;
         activeMainPage = PAGE_TOOLS;
         projectList = null;
+        sessionGroupList = null;
         root.removeAllViews();
         root.addView(createServerBar(), matchWrap());
         root.addView(createMainTabs(PAGE_TOOLS), new LinearLayout.LayoutParams(
@@ -446,6 +739,7 @@ public final class MainActivity extends Activity {
         closeTerminalSocket();
         activeSessionName = null;
         activeMainPage = PAGE_PROJECTS;
+        sessionGroupList = null;
         root.removeAllViews();
         root.addView(createServerBar(), matchWrap());
         root.addView(createMainTabs(PAGE_PROJECTS), new LinearLayout.LayoutParams(
@@ -500,6 +794,7 @@ public final class MainActivity extends Activity {
         activeSessionName = null;
         activeMainPage = PAGE_UPDATE;
         projectList = null;
+        sessionGroupList = null;
         root.removeAllViews();
         root.addView(createServerBar(), matchWrap());
         root.addView(createMainTabs(PAGE_UPDATE), new LinearLayout.LayoutParams(
@@ -555,6 +850,7 @@ public final class MainActivity extends Activity {
         activeSessionName = null;
         activeMainPage = PAGE_ABOUT;
         projectList = null;
+        sessionGroupList = null;
         root.removeAllViews();
         root.addView(createServerBar(), matchWrap());
         root.addView(createMainTabs(PAGE_ABOUT), new LinearLayout.LayoutParams(
@@ -750,7 +1046,7 @@ public final class MainActivity extends Activity {
     private LinearLayout pageContent() {
         LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(dp(10), dp(9), dp(10), dp(14));
+        content.setPadding(dp(16), dp(12), dp(16), dp(24));
         return content;
     }
 
@@ -866,11 +1162,29 @@ public final class MainActivity extends Activity {
         executor.execute(() -> {
             try {
                 List<SessionSummary> sessions = api.getSessions();
-                runOnUiThread(() -> renderSessionList(sessions));
+                String projects = "";
+                if (sessionGroupList != null) {
+                    try {
+                        projects = api.kanbanProjects();
+                    } catch (Exception ignored) {
+                    }
+                }
+                String finalProjects = projects;
+                runOnUiThread(() -> {
+                    if (sessionGroupList != null) {
+                        renderGroupedSessionList(sessions, finalProjects);
+                    } else {
+                        renderSessionList(sessions);
+                    }
+                });
             } catch (Exception error) {
                 runOnUiThread(() -> {
                     if (sessionSummaryText != null) {
                         sessionSummaryText.setText("Server: " + getServerUrl() + "\nSessions: failed - " + error.getMessage());
+                    }
+                    if (sessionGroupList != null) {
+                        sessionGroupList.removeAllViews();
+                        sessionGroupList.addView(projectStateText("Session load failed:\n" + error.getMessage()), matchWrap());
                     }
                     showMessage("Session load failed: " + error.getMessage());
                 });
@@ -878,6 +1192,107 @@ public final class MainActivity extends Activity {
                 runOnUiThread(() -> progressBar.setVisibility(View.GONE));
             }
         });
+    }
+
+    private void renderGroupedSessionList(List<SessionSummary> sessions, String projectsText) {
+        if (sessionGroupList == null) {
+            return;
+        }
+        sessionGroupList.removeAllViews();
+        Set<String> grouped = new HashSet<>();
+        try {
+            JSONObject object = new JSONObject(projectsText == null || projectsText.isEmpty() ? "{}" : projectsText);
+            JSONArray projects = object.optJSONArray("projects");
+            for (int projectIndex = 0; projects != null && projectIndex < projects.length(); projectIndex++) {
+                JSONObject project = projects.optJSONObject(projectIndex);
+                if (project == null) {
+                    continue;
+                }
+                JSONArray agents = project.optJSONArray("agents");
+                List<SessionSummary> groupSessions = new ArrayList<>();
+                for (int agentIndex = 0; agents != null && agentIndex < agents.length(); agentIndex++) {
+                    String sessionName = agentSessionName(agents.optJSONObject(agentIndex));
+                    SessionSummary summary = findSession(sessions, sessionName);
+                    if (summary != null) {
+                        groupSessions.add(summary);
+                        grouped.add(summary.name);
+                    }
+                }
+                sessionGroupList.addView(sessionGroupSection(
+                        project.optString("name", "Project"),
+                        groupSessions,
+                        true
+                ), matchWrap());
+            }
+        } catch (Exception ignored) {
+        }
+
+        List<SessionSummary> ungrouped = new ArrayList<>();
+        for (SessionSummary session : sessions) {
+            if (!grouped.contains(session.name)) {
+                ungrouped.add(session);
+            }
+        }
+        sessionGroupList.addView(sessionGroupSection("Ungrouped", ungrouped, false), matchWrap());
+        setStatus("Loaded " + sessions.size() + " sessions");
+    }
+
+    private SessionSummary findSession(List<SessionSummary> sessions, String name) {
+        for (SessionSummary session : sessions) {
+            if (session.name.equals(name)) {
+                return session;
+            }
+        }
+        return null;
+    }
+
+    private View sessionGroupSection(String name, List<SessionSummary> sessions, boolean project) {
+        LinearLayout section = new LinearLayout(this);
+        section.setOrientation(LinearLayout.VERTICAL);
+
+        LinearLayout heading = new LinearLayout(this);
+        heading.setOrientation(LinearLayout.HORIZONTAL);
+        heading.setGravity(Gravity.CENTER_VERTICAL);
+        heading.setPadding(dp(2), dp(9), dp(2), dp(7));
+        TextView icon = new TextView(this);
+        icon.setText(project ? "▰" : "≡");
+        icon.setTextColor(project ? COLOR_ACCENT_WARM : COLOR_TEXT_DIM);
+        icon.setTextSize(13);
+        heading.addView(icon, new LinearLayout.LayoutParams(dp(22), dp(24)));
+        TextView title = new TextView(this);
+        title.setText(name);
+        title.setTextColor(project ? COLOR_TEXT : COLOR_TEXT_MUTED);
+        title.setTextSize(14);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        heading.addView(title);
+        TextView count = new TextView(this);
+        count.setText("  " + sessions.size());
+        count.setTextColor(COLOR_TEXT_DIM);
+        count.setTextSize(11);
+        count.setTypeface(Typeface.MONOSPACE);
+        heading.addView(count);
+        section.addView(heading);
+
+        if (sessions.isEmpty()) {
+            TextView empty = bodyText(project ? "No sessions in this group" : "Nothing ungrouped");
+            empty.setGravity(Gravity.CENTER);
+            empty.setTextSize(11);
+            empty.setPadding(dp(12), dp(14), dp(12), dp(14));
+            empty.setBackground(rounded(Color.TRANSPARENT, 8, COLOR_BORDER_SOFT, 1));
+            section.addView(empty, matchWrap());
+        } else {
+            for (SessionSummary session : sessions) {
+                section.addView(sessionRow(session), matchWrap());
+            }
+        }
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        params.bottomMargin = dp(7);
+        section.setLayoutParams(params);
+        return section;
     }
 
     private void refreshProjects() {
@@ -1037,41 +1452,75 @@ public final class MainActivity extends Activity {
 
     private View sessionRow(SessionSummary session) {
         LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.VERTICAL);
-        row.setPadding(dp(12), dp(10), dp(12), dp(10));
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(dp(10), dp(9), dp(6), dp(9));
         row.setBackground(cardBackground());
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            row.setElevation(dp(1));
-        }
+        row.setHapticFeedbackEnabled(true);
+        row.setOnClickListener(view -> openTerminal(session.name));
 
+        boolean attached = session.status != null
+                && (session.status.toLowerCase(java.util.Locale.ROOT).contains("attach")
+                || session.status.toLowerCase(java.util.Locale.ROOT).contains("active"));
+
+        TextView icon = new TextView(this);
+        icon.setText(">_");
+        icon.setTextColor(attached ? COLOR_ACCENT : COLOR_TEXT_MUTED);
+        icon.setTextSize(12);
+        icon.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        icon.setGravity(Gravity.CENTER);
+        icon.setBackground(rounded(attached ? COLOR_ACCENT_DARK : COLOR_CARD_ALT, 8, Color.TRANSPARENT, 0));
+        row.addView(icon, new LinearLayout.LayoutParams(dp(38), dp(38)));
+
+        LinearLayout textBlock = new LinearLayout(this);
+        textBlock.setOrientation(LinearLayout.VERTICAL);
+        textBlock.setPadding(dp(10), 0, dp(4), 0);
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
         TextView title = new TextView(this);
         title.setText(session.name);
         title.setTextColor(COLOR_TEXT);
-        title.setTextSize(17);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setTextSize(14);
+        title.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        title.setSingleLine(true);
+        title.setEllipsize(TextUtils.TruncateAt.END);
+        titleRow.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        if (attached) {
+            TextView chip = new TextView(this);
+            chip.setText("attached");
+            chip.setTextColor(COLOR_ACCENT);
+            chip.setTextSize(9);
+            chip.setTypeface(Typeface.MONOSPACE);
+            chip.setPadding(dp(5), dp(1), dp(5), dp(1));
+            chip.setBackground(rounded(COLOR_ACCENT_DARK, 5, Color.TRANSPARENT, 0));
+            titleRow.addView(chip);
+        }
+        TextView meta = bodyText(
+                session.windows + (session.windows == 1 ? " window" : " windows")
+                        + "  ·  " + session.paneCount + (session.paneCount == 1 ? " pane" : " panes")
+                        + textPart(session.currentCommand)
+        );
+        meta.setTextSize(11);
+        meta.setSingleLine(true);
+        meta.setEllipsize(TextUtils.TruncateAt.END);
+        textBlock.addView(titleRow, matchWrap());
+        textBlock.addView(meta);
+        row.addView(textBlock, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
-        String detail = session.status
-                + "  windows:" + session.windows
-                + "  panes:" + session.paneCount
-                + textPart(session.currentCommand)
-                + textPart(session.currentPath);
-        TextView meta = bodyText(detail);
-        meta.setPadding(0, dp(4), 0, dp(8));
+        Button more = terminalToolButton("⋯", view -> showSessionActions(session.name));
+        more.setContentDescription("Session actions");
+        row.addView(more);
+        Button kill = terminalToolButton("×", view -> confirmKill(session.name));
+        kill.setContentDescription("Kill session");
+        kill.setTextColor(COLOR_DANGER);
+        row.addView(kill);
 
-        LinearLayout actions = new LinearLayout(this);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        actions.addView(toolbarButton("Open", view -> openTerminal(session.name)));
-        actions.addView(toolbarButton("Kill", view -> confirmKill(session.name)));
-        actions.addView(toolbarButton("More", view -> showSessionActions(session.name)));
-
-        row.addView(title);
-        row.addView(meta);
-        row.addView(actions);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         );
-        params.bottomMargin = dp(8);
+        params.bottomMargin = dp(7);
         row.setLayoutParams(params);
         return row;
     }
@@ -1129,6 +1578,7 @@ public final class MainActivity extends Activity {
         closeTerminalSocket();
         activeSessionName = sessionName;
         projectList = null;
+        sessionGroupList = null;
         terminalScreen = new TerminalScreenBuffer(DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS);
         queuedTerminalInput.setLength(0);
         terminalConnected = false;
@@ -1146,7 +1596,7 @@ public final class MainActivity extends Activity {
         root.addView(createTerminalTopBar(sessionName), matchWrap());
         root.addView(createTerminalGroupBar(), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(38)
+                dp(40)
         ));
 
         terminalScroll = new ScrollView(this);
@@ -1201,27 +1651,28 @@ public final class MainActivity extends Activity {
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
-        bar.setPadding(dp(5), dp(3), dp(5), dp(3));
+        bar.setPadding(dp(7), dp(6), dp(7), dp(6));
         bar.setBackgroundColor(COLOR_BAR);
         bar.addView(terminalToolButton("‹", view -> openSessionPage()));
 
         LinearLayout titleBlock = new LinearLayout(this);
         titleBlock.setOrientation(LinearLayout.VERTICAL);
         titleBlock.setGravity(Gravity.CENTER_VERTICAL);
-        titleBlock.setPadding(dp(8), 0, dp(8), 0);
+        titleBlock.setPadding(dp(9), 0, dp(7), 0);
 
         TextView title = new TextView(this);
         title.setText(sessionName);
         title.setTextColor(COLOR_TEXT);
-        title.setTextSize(14);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setTextSize(13);
+        title.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         title.setSingleLine(true);
         title.setEllipsize(TextUtils.TruncateAt.END);
         title.setIncludeFontPadding(false);
 
         terminalMetaText = new TextView(this);
         terminalMetaText.setTextColor(COLOR_TEXT_DIM);
-        terminalMetaText.setTextSize(10);
+        terminalMetaText.setTextSize(9);
+        terminalMetaText.setTypeface(Typeface.MONOSPACE);
         terminalMetaText.setSingleLine(true);
         terminalMetaText.setEllipsize(TextUtils.TruncateAt.MIDDLE);
         terminalMetaText.setIncludeFontPadding(false);
@@ -1229,13 +1680,13 @@ public final class MainActivity extends Activity {
 
         titleBlock.addView(title, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(18)
+                dp(17)
         ));
         titleBlock.addView(terminalMetaText, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(14)
+                dp(13)
         ));
-        bar.addView(titleBlock, new LinearLayout.LayoutParams(0, dp(34), 1));
+        bar.addView(titleBlock, new LinearLayout.LayoutParams(0, dp(32), 1));
         bar.addView(terminalToolButton("↻", view -> connectTerminal(sessionName)));
         bar.addView(terminalToolButton("⋯", view -> showTerminalActions(sessionName)));
         return bar;
@@ -1249,7 +1700,7 @@ public final class MainActivity extends Activity {
         terminalGroupRow = new LinearLayout(this);
         terminalGroupRow.setOrientation(LinearLayout.HORIZONTAL);
         terminalGroupRow.setGravity(Gravity.CENTER_VERTICAL);
-        terminalGroupRow.setPadding(dp(5), dp(3), dp(5), dp(3));
+        terminalGroupRow.setPadding(dp(9), dp(5), dp(9), dp(5));
         terminalGroupRow.addView(groupLabel("group..."));
 
         scroller.addView(terminalGroupRow, new HorizontalScrollView.LayoutParams(
@@ -1436,10 +1887,10 @@ public final class MainActivity extends Activity {
         TextView label = new TextView(this);
         label.setText(text);
         label.setTextColor(COLOR_TEXT_DIM);
-        label.setTextSize(11);
-        label.setTypeface(Typeface.DEFAULT_BOLD);
+        label.setTextSize(9);
+        label.setTypeface(Typeface.MONOSPACE);
         label.setGravity(Gravity.CENTER_VERTICAL);
-        label.setPadding(dp(5), 0, dp(6), 0);
+        label.setPadding(dp(3), 0, dp(7), 0);
         return label;
     }
 
@@ -1450,8 +1901,11 @@ public final class MainActivity extends Activity {
             }
         });
         if (active) {
-            button.setTextColor(Color.rgb(5, 18, 18));
-            button.setBackground(rounded(COLOR_ACCENT, 7, COLOR_ACCENT, 1));
+            button.setTextColor(COLOR_ACCENT);
+            button.setBackground(rounded(COLOR_ACCENT_DARK, 6, Color.TRANSPARENT, 0));
+        } else {
+            button.setTextColor(COLOR_TEXT_MUTED);
+            button.setBackground(rounded(Color.TRANSPARENT, 6, Color.TRANSPARENT, 0));
         }
         return button;
     }
@@ -1599,7 +2053,7 @@ public final class MainActivity extends Activity {
     private LinearLayout createComposerBar() {
         LinearLayout bar = new LinearLayout(this);
         bar.setOrientation(LinearLayout.VERTICAL);
-        bar.setPadding(dp(8), dp(5), dp(8), dp(6));
+        bar.setPadding(dp(9), dp(7), dp(9), dp(8));
         bar.setBackgroundColor(COLOR_BAR);
 
         LinearLayout row = new LinearLayout(this);
@@ -1608,16 +2062,16 @@ public final class MainActivity extends Activity {
 
         terminalKeyPageButton = terminalPageButton();
         LinearLayout.LayoutParams pageParams = new LinearLayout.LayoutParams(
-                dp(62),
-                dp(42)
+                dp(42),
+                dp(40)
         );
-        pageParams.rightMargin = dp(4);
+        pageParams.rightMargin = dp(6);
         row.addView(terminalKeyPageButton, pageParams);
 
         inputField = new EditText(this);
         inputField.setTextColor(COLOR_TEXT);
         inputField.setHintTextColor(COLOR_TEXT_DIM);
-        inputField.setHint("type, edit, paste");
+        inputField.setHint("type a command…");
         inputField.setSingleLine(false);
         inputField.setMinLines(1);
         inputField.setMaxLines(2);
@@ -1645,11 +2099,21 @@ public final class MainActivity extends Activity {
             }
             return false;
         });
-        row.addView(inputField, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
-        row.addView(toolbarButton("Send", view -> sendLine()), new LinearLayout.LayoutParams(
+        Button image = terminalToolButton("▧", view -> pickImageForSession(activeSessionName));
+        image.setContentDescription("Upload image");
+        row.addView(image, new LinearLayout.LayoutParams(dp(40), dp(40)));
+        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(
+                0,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-                dp(42)
-        ));
+                1
+        );
+        inputParams.leftMargin = dp(6);
+        inputParams.rightMargin = dp(6);
+        row.addView(inputField, inputParams);
+        Button send = primaryButton("↵", view -> sendLine());
+        send.setTextSize(18);
+        send.setContentDescription("Send input");
+        row.addView(send, new LinearLayout.LayoutParams(dp(40), dp(40)));
         bar.addView(row, matchWrap());
         return bar;
     }
@@ -1853,6 +2317,14 @@ public final class MainActivity extends Activity {
                     startActivityForResult(Intent.createChooser(intent, "Choose image"), IMAGE_PICK_REQUEST);
                 })
                 .show();
+    }
+
+    private void pickImageForSession(String sessionName) {
+        pendingImageUploadSession = sessionName == null ? "" : sessionName;
+        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
+        intent.setType("image/*");
+        intent.addCategory(Intent.CATEGORY_OPENABLE);
+        startActivityForResult(Intent.createChooser(intent, "Choose image"), IMAGE_PICK_REQUEST);
     }
 
     private void promptImagePreviewInfo() {
@@ -2128,9 +2600,6 @@ public final class MainActivity extends Activity {
                         refreshProjects();
                     } else if (PAGE_SESSIONS.equals(activeMainPage)) {
                         refreshSessions();
-                        if (projectList != null) {
-                            refreshProjects();
-                        }
                     } else if (activeSessionName == null) {
                         refreshSessions();
                     }
@@ -2212,25 +2681,10 @@ public final class MainActivity extends Activity {
         scroller.setHorizontalScrollBarEnabled(false);
         scroller.setBackgroundColor(COLOR_PANEL);
 
-        LinearLayout pad = new LinearLayout(this);
-        pad.setOrientation(LinearLayout.VERTICAL);
-        pad.setPadding(dp(5), dp(4), dp(5), dp(4));
-
-        LinearLayout firstRow = terminalKeyRow();
-        LinearLayout secondRow = terminalKeyRow();
-        addAccessoryPageKeys(firstRow, secondRow);
-        pad.addView(firstRow, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                0,
-                1
-        ));
-        pad.addView(secondRow, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                0,
-                1
-        ));
-
-        scroller.addView(pad, new HorizontalScrollView.LayoutParams(
+        LinearLayout row = terminalKeyRow();
+        row.setPadding(dp(8), dp(5), dp(8), dp(5));
+        addAccessoryPageKeys(row);
+        scroller.addView(row, new HorizontalScrollView.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
         ));
@@ -2244,62 +2698,57 @@ public final class MainActivity extends Activity {
         return row;
     }
 
-    private void addAccessoryPageKeys(LinearLayout topRow, LinearLayout bottomRow) {
+    private void addAccessoryPageKeys(LinearLayout row) {
         switch (terminalKeyPage) {
             case 1:
-                addSoftKey(topRow, "Esc", "\u001b");
-                addSoftKey(topRow, "Tab", "\t");
-                addSoftKey(topRow, "^C", "\u0003");
-                addSoftKey(topRow, "^D", "\u0004");
-                addSoftKey(topRow, "^L", "\u000c");
-                addSoftKey(bottomRow, "^R", "\u0012");
-                addSoftKey(bottomRow, "^A", "\u0001");
-                addSoftKey(bottomRow, "^E", "\u0005");
-                addSoftKey(bottomRow, "^U", "\u0015");
-                addSoftKey(bottomRow, "^K", "\u000b");
+                addSoftKey(row, "Esc", "\u001b");
+                addSoftKey(row, "Tab", "\t");
+                addSoftKey(row, "C-c", "\u0003");
+                addSoftKey(row, "C-d", "\u0004");
+                addSoftKey(row, "C-z", "\u001a");
+                addSoftKey(row, "C-l", "\u000c");
+                addSoftKey(row, "C-r", "\u0012");
+                addSoftKey(row, "C-a", "\u0001");
+                addSoftKey(row, "C-e", "\u0005");
                 break;
             case 2:
-                addSoftKey(topRow, "←", "\u001b[D");
-                addSoftKey(topRow, "→", "\u001b[C");
-                addSoftKey(topRow, "↑", "\u001b[A");
-                addSoftKey(topRow, "↓", "\u001b[B");
-                addSoftKey(topRow, "Hm", "\u001b[H");
-                addSoftKey(bottomRow, "End", "\u001b[F");
-                addSoftKey(bottomRow, "Pg↑", "\u001b[5~");
-                addSoftKey(bottomRow, "Pg↓", "\u001b[6~");
-                addSoftKey(bottomRow, "^B", "\u0002");
-                addSoftKey(bottomRow, "Dch", "\u0002d");
-                addSoftKey(bottomRow, "New", "\u0002c");
-                addSoftKey(bottomRow, "Prev", "\u0002p");
-                addSoftKey(bottomRow, "Next", "\u0002n");
+                addSoftKey(row, "←", "\u001b[D");
+                addSoftKey(row, "→", "\u001b[C");
+                addSoftKey(row, "↑", "\u001b[A");
+                addSoftKey(row, "↓", "\u001b[B");
+                addSoftKey(row, "Home", "\u001b[H");
+                addSoftKey(row, "End", "\u001b[F");
+                addSoftKey(row, "Pg↑", "\u001b[5~");
+                addSoftKey(row, "Pg↓", "\u001b[6~");
+                addSoftKey(row, "Prev", "\u0002p");
+                addSoftKey(row, "Next", "\u0002n");
                 break;
             case 3:
-                addTextKey(topRow, "/", "/");
-                addTextKey(topRow, "-", "-");
-                addTextKey(topRow, "_", "_");
-                addTextKey(topRow, ".", ".");
-                addTextKey(topRow, "~", "~");
-                addTextKey(bottomRow, "|", "|");
-                addTextKey(bottomRow, "&", "&");
-                addTextKey(bottomRow, ";", ";");
-                addTextKey(bottomRow, "$", "$");
-                addTextKey(bottomRow, "Space", " ");
+                addTextKey(row, "~", "~");
+                addTextKey(row, "/", "/");
+                addTextKey(row, "-", "-");
+                addTextKey(row, "_", "_");
+                addTextKey(row, ".", ".");
+                addTextKey(row, "|", "|");
+                addTextKey(row, "&", "&");
+                addTextKey(row, ";", ";");
+                addTextKey(row, "$", "$");
+                addTextKey(row, "Space", " ");
                 break;
             case 0:
             default:
-                addComposerButton(topRow, "←", () -> moveComposerCursor(-1));
-                addComposerButton(topRow, "→", () -> moveComposerCursor(1));
-                addSoftKey(topRow, "↑", "\u001b[A");
-                addSoftKey(topRow, "↓", "\u001b[B");
-                addSoftKey(topRow, "Enter", TERMINAL_ENTER);
-                addSoftKey(topRow, "Tab", "\t");
-                addAccessoryButton(topRow, "NL", view -> insertComposerText("\n"));
-                addSoftButton(bottomRow, "Pst", view -> pasteClipboard());
-                addAccessoryButton(bottomRow, "⌫", view -> backspaceComposerText());
-                addAccessoryButton(bottomRow, "⌨", view -> showKeyboard());
-                addAccessoryButton(bottomRow, "⌄", view -> hideKeyboard());
-                addAccessoryButton(bottomRow, "⇣", view -> scrollTerminalBottom());
-                addAccessoryButton(bottomRow, "Sel", view -> toggleTerminalSelection());
+                addComposerButton(row, "←", () -> moveComposerCursor(-1));
+                addComposerButton(row, "→", () -> moveComposerCursor(1));
+                addSoftKey(row, "↑", "\u001b[A");
+                addSoftKey(row, "↓", "\u001b[B");
+                addSoftKey(row, "Esc", "\u001b");
+                addSoftKey(row, "Tab", "\t");
+                addSoftKey(row, "Enter", TERMINAL_ENTER);
+                addSoftButton(row, "Paste", view -> pasteClipboard());
+                addAccessoryButton(row, "⌫", view -> backspaceComposerText());
+                addAccessoryButton(row, "⌄", view -> hideKeyboard());
+                addAccessoryButton(row, "⇣", view -> scrollTerminalBottom());
+                addAccessoryButton(row, "Sel", view -> toggleTerminalSelection());
                 break;
         }
     }
@@ -2751,10 +3200,10 @@ public final class MainActivity extends Activity {
 
     private Button terminalPageButton() {
         Button button = toolbarButton("", view -> setTerminalKeyPage(terminalKeyPage + 1));
-        button.setTextSize(10);
+        button.setTextSize(9);
         button.setPadding(dp(4), 0, dp(4), 0);
-        button.setMinWidth(dp(62));
-        button.setMinimumWidth(dp(62));
+        button.setMinWidth(dp(42));
+        button.setMinimumWidth(dp(42));
         button.setOnLongClickListener(view -> {
             view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
             setTerminalKeyPage(terminalKeyPage - 1);
@@ -3200,6 +3649,10 @@ public final class MainActivity extends Activity {
     public void onBackPressed() {
         if (activeSessionName != null) {
             openSessionPage();
+            return;
+        }
+        if (!PAGE_SERVERS.equals(activeMainPage)) {
+            renderServerScreen();
             return;
         }
         super.onBackPressed();
