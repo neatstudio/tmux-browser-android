@@ -66,7 +66,7 @@ public final class MainActivity extends Activity {
     private static final int MAX_TERMINAL_COLS = 140;
     private static final int MIN_TERMINAL_ROWS = 8;
     private static final int MAX_TERMINAL_ROWS = 80;
-    private static final int TERMINAL_KEYS_HEIGHT_DP = 92;
+    private static final int TERMINAL_KEYS_HEIGHT_DP = 54;
     private static final int STATUS_NORMAL = 0;
     private static final int STATUS_BUSY = 1;
     private static final int STATUS_SUCCESS = 2;
@@ -2074,8 +2074,8 @@ public final class MainActivity extends Activity {
         inputField.setHintTextColor(COLOR_TEXT_DIM);
         inputField.setHint("type command or text");
         inputField.setSingleLine(false);
-        inputField.setMinLines(1);
-        inputField.setMaxLines(2);
+        inputField.setMinLines(3);
+        inputField.setMaxLines(5);
         inputField.setCursorVisible(true);
         inputField.setFocusableInTouchMode(true);
         inputField.setGravity(Gravity.TOP | Gravity.START);
@@ -2679,7 +2679,7 @@ public final class MainActivity extends Activity {
     private LinearLayout createAccessoryBar() {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(6), dp(4), dp(6), dp(4));
+        panel.setPadding(dp(6), dp(3), dp(6), dp(3));
         panel.setBackgroundColor(COLOR_PANEL);
 
         LinearLayout tabs = terminalKeyRow();
@@ -2690,26 +2690,25 @@ public final class MainActivity extends Activity {
         addAccessoryTab(tabs, "Sym", 3);
         panel.addView(tabs, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(24)
+                dp(18)
         ));
 
-        LinearLayout firstRow = terminalKeyRow();
-        LinearLayout secondRow = terminalKeyRow();
-        addAccessoryPageKeys(firstRow, secondRow);
-        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+        HorizontalScrollView keyScroller = new HorizontalScrollView(this);
+        keyScroller.setHorizontalScrollBarEnabled(false);
+        keyScroller.setFillViewport(true);
+        LinearLayout keyRow = terminalKeyRow();
+        addAccessoryPageKeys(keyRow);
+        keyScroller.addView(keyRow, new HorizontalScrollView.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+        ));
+        LinearLayout.LayoutParams keyParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
                 1
         );
-        rowParams.topMargin = dp(3);
-        panel.addView(firstRow, rowParams);
-        LinearLayout.LayoutParams secondParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1
-        );
-        secondParams.topMargin = dp(3);
-        panel.addView(secondRow, secondParams);
+        keyParams.topMargin = dp(2);
+        panel.addView(keyScroller, keyParams);
         return panel;
     }
 
@@ -2720,64 +2719,64 @@ public final class MainActivity extends Activity {
         return row;
     }
 
-    private void addAccessoryPageKeys(LinearLayout firstRow, LinearLayout secondRow) {
+    private void addAccessoryPageKeys(LinearLayout row) {
         switch (terminalKeyPage) {
             case 1:
-                addSoftKey(firstRow, "Esc", "\u001b");
-                addSoftKey(firstRow, "Tab", "\t");
-                addSoftKey(firstRow, "C-c", "\u0003");
-                addSoftKey(firstRow, "C-d", "\u0004");
-                addSoftKey(firstRow, "C-z", "\u001a");
-                addSoftKey(firstRow, "C-l", "\u000c");
-                addSoftKey(secondRow, "C-r", "\u0012");
-                addSoftKey(secondRow, "C-a", "\u0001");
-                addSoftKey(secondRow, "C-e", "\u0005");
-                addSoftKey(secondRow, "C-u", "\u0015");
-                addSoftKey(secondRow, "C-k", "\u000b");
-                addSoftKey(secondRow, "C-b", "\u0002");
+                addSoftKey(row, "Esc", "\u001b");
+                addSoftKey(row, "Tab", "\t");
+                addSoftKey(row, "C-c", "\u0003");
+                addSoftKey(row, "C-d", "\u0004");
+                addSoftKey(row, "C-z", "\u001a");
+                addSoftKey(row, "C-l", "\u000c");
+                addSoftKey(row, "C-r", "\u0012");
+                addSoftKey(row, "C-a", "\u0001");
+                addSoftKey(row, "C-e", "\u0005");
+                addSoftKey(row, "C-u", "\u0015");
+                addSoftKey(row, "C-k", "\u000b");
+                addSoftKey(row, "C-b", "\u0002");
                 break;
             case 2:
-                addSoftKey(firstRow, "←", "\u001b[D");
-                addSoftKey(firstRow, "→", "\u001b[C");
-                addSoftKey(firstRow, "↑", "\u001b[A");
-                addSoftKey(firstRow, "↓", "\u001b[B");
-                addSoftKey(firstRow, "Home", "\u001b[H");
-                addSoftKey(firstRow, "End", "\u001b[F");
-                addSoftKey(secondRow, "Pg↑", "\u001b[5~");
-                addSoftKey(secondRow, "Pg↓", "\u001b[6~");
-                addComposerButton(secondRow, "Prev", () -> setTerminalKeyPage(terminalKeyPage - 1));
-                addComposerButton(secondRow, "Next", () -> setTerminalKeyPage(terminalKeyPage + 1));
-                addSoftKey(secondRow, "Clear", "\u000c");
-                addSoftKey(secondRow, "Detach", "\u0002d");
+                addSoftKey(row, "←", "\u001b[D");
+                addSoftKey(row, "→", "\u001b[C");
+                addSoftKey(row, "↑", "\u001b[A");
+                addSoftKey(row, "↓", "\u001b[B");
+                addSoftKey(row, "Home", "\u001b[H");
+                addSoftKey(row, "End", "\u001b[F");
+                addSoftKey(row, "Pg↑", "\u001b[5~");
+                addSoftKey(row, "Pg↓", "\u001b[6~");
+                addComposerButton(row, "Prev", () -> setTerminalKeyPage(terminalKeyPage - 1));
+                addComposerButton(row, "Next", () -> setTerminalKeyPage(terminalKeyPage + 1));
+                addSoftKey(row, "Clear", "\u000c");
+                addSoftKey(row, "Detach", "\u0002d");
                 break;
             case 3:
-                addTextKey(firstRow, "~", "~");
-                addTextKey(firstRow, "/", "/");
-                addTextKey(firstRow, "-", "-");
-                addTextKey(firstRow, "_", "_");
-                addTextKey(firstRow, ".", ".");
-                addTextKey(firstRow, "|", "|");
-                addTextKey(secondRow, "&", "&");
-                addTextKey(secondRow, ";", ";");
-                addTextKey(secondRow, "$", "$");
-                addTextKey(secondRow, "\"", "\"");
-                addTextKey(secondRow, "'", "'");
-                addTextKey(secondRow, "Space", " ");
+                addTextKey(row, "~", "~");
+                addTextKey(row, "/", "/");
+                addTextKey(row, "-", "-");
+                addTextKey(row, "_", "_");
+                addTextKey(row, ".", ".");
+                addTextKey(row, "|", "|");
+                addTextKey(row, "&", "&");
+                addTextKey(row, ";", ";");
+                addTextKey(row, "$", "$");
+                addTextKey(row, "\"", "\"");
+                addTextKey(row, "'", "'");
+                addTextKey(row, "Space", " ");
                 break;
             case 0:
             default:
-                addComposerButton(firstRow, "←", () -> moveComposerCursor(-1));
-                addComposerButton(firstRow, "→", () -> moveComposerCursor(1));
-                addSoftKey(firstRow, "↑", "\u001b[A");
-                addSoftKey(firstRow, "↓", "\u001b[B");
-                addSoftKey(firstRow, "Esc", "\u001b");
-                addSoftKey(firstRow, "Tab", "\t");
-                addSoftKey(secondRow, "Enter", TERMINAL_ENTER);
-                addSoftButton(secondRow, "Paste", view -> pasteClipboard());
-                addComposerButton(secondRow, "⌫", this::backspaceComposerText);
-                addTextKey(secondRow, "NL", "\n");
-                addComposerButton(secondRow, "Bottom", this::scrollTerminalBottom);
-                addComposerButton(secondRow, "Select", () -> {
+                addComposerButton(row, "←", () -> moveComposerCursor(-1));
+                addComposerButton(row, "→", () -> moveComposerCursor(1));
+                addSoftKey(row, "↑", "\u001b[A");
+                addSoftKey(row, "↓", "\u001b[B");
+                addSoftKey(row, "Esc", "\u001b");
+                addSoftKey(row, "Tab", "\t");
+                addSoftKey(row, "Enter", TERMINAL_ENTER);
+                addSoftButton(row, "Paste", view -> pasteClipboard());
+                addComposerButton(row, "⌫", this::backspaceComposerText);
+                addTextKey(row, "NL", "\n");
+                addComposerButton(row, "Bottom", this::scrollTerminalBottom);
+                addComposerButton(row, "Select", () -> {
                     terminalSelectionEnabled = !terminalSelectionEnabled;
                     if (terminalText != null) {
                         terminalText.setTextIsSelectable(terminalSelectionEnabled);
@@ -3225,6 +3224,8 @@ public final class MainActivity extends Activity {
         button.setPadding(dp(5), 0, dp(5), 0);
         button.setMinWidth(0);
         button.setMinimumWidth(0);
+        button.setMinHeight(0);
+        button.setMinimumHeight(0);
         return button;
     }
 
@@ -3249,7 +3250,6 @@ public final class MainActivity extends Activity {
         input.setTextColor(COLOR_TEXT);
         input.setHintTextColor(COLOR_TEXT_DIM);
         input.setTextSize(13);
-        input.setMinHeight(dp(38));
         input.setPadding(dp(8), dp(5), dp(8), dp(5));
         input.setBackground(inputBackground());
     }
@@ -3308,37 +3308,40 @@ public final class MainActivity extends Activity {
 
     private void addSoftButton(LinearLayout row, String label, View.OnClickListener listener) {
         Button button = toolbarButton(label, listener);
-        button.setTextSize(isArrowLabel(label) ? 15 : 9);
-        button.setPadding(dp(2), 0, dp(2), 0);
+        button.setTextSize(isArrowLabel(label) ? 14 : 9);
+        button.setPadding(dp(5), 0, dp(5), 0);
         button.setMinWidth(0);
         button.setMinimumWidth(0);
+        button.setMinHeight(0);
+        button.setMinimumHeight(0);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                1
+                0
         );
-        params.leftMargin = dp(2);
-        params.rightMargin = dp(2);
+        params.leftMargin = dp(1);
+        params.rightMargin = dp(1);
         row.addView(button, params);
     }
 
     private void addAccessoryTab(LinearLayout row, String label, int page) {
         Button button = toolbarButton(label, view -> setTerminalKeyPage(page));
         boolean selected = terminalKeyPage == page;
-        button.setTextSize(9);
-        button.setPadding(dp(2), 0, dp(2), 0);
+        button.setTextSize(8);
+        button.setPadding(dp(7), 0, dp(7), 0);
         button.setMinWidth(0);
         button.setMinimumWidth(0);
+        button.setMinHeight(0);
+        button.setMinimumHeight(0);
         button.setTextColor(selected ? Color.rgb(14, 38, 24) : COLOR_TEXT_MUTED);
         button.setBackground(selected
                 ? rounded(COLOR_ACCENT, 7, COLOR_ACCENT, 1)
                 : rounded(COLOR_CARD_ALT, 7, COLOR_BORDER_SOFT, 1));
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                1
+                0
         );
-        params.leftMargin = dp(2);
         params.rightMargin = dp(2);
         row.addView(button, params);
     }
