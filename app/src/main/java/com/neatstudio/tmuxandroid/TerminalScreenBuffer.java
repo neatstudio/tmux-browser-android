@@ -14,6 +14,7 @@ import java.util.List;
 final class TerminalScreenBuffer {
     private static final int DEFAULT_FG = 0xffe6ebf2;
     private static final int DEFAULT_BG = Color.TRANSPARENT;
+    private static final int TERMINAL_BG = 0xff0b0e13;
 
     private int cols;
     private int rows;
@@ -27,6 +28,7 @@ final class TerminalScreenBuffer {
     private int fg = DEFAULT_FG;
     private int bg = DEFAULT_BG;
     private boolean bold;
+    private boolean dim;
 
     TerminalScreenBuffer(int cols, int rows) {
         resize(cols, rows);
@@ -74,6 +76,7 @@ final class TerminalScreenBuffer {
         fg = DEFAULT_FG;
         bg = DEFAULT_BG;
         bold = false;
+        dim = false;
     }
 
     void write(String text) {
@@ -257,10 +260,14 @@ final class TerminalScreenBuffer {
                 fg = DEFAULT_FG;
                 bg = DEFAULT_BG;
                 bold = false;
+                dim = false;
             } else if (value == 1) {
                 bold = true;
+            } else if (value == 2) {
+                dim = true;
             } else if (value == 22) {
                 bold = false;
+                dim = false;
             } else if (value == 39) {
                 fg = DEFAULT_FG;
             } else if (value == 49) {
@@ -302,7 +309,7 @@ final class TerminalScreenBuffer {
             wrapPending = false;
             newLine();
         }
-        cells[cursorRow][cursorCol].set(value, fg, bg, bold);
+        cells[cursorRow][cursorCol].set(value, fg, bg, bold, dim);
         if (cursorCol == cols - 1) {
             wrapPending = true;
         } else {
@@ -453,15 +460,19 @@ final class TerminalScreenBuffer {
             int fgColor = first.fg;
             int bgColor = first.bg;
             boolean isBold = first.bold;
+            boolean isDim = first.dim;
             while (col < cols) {
                 Cell cell = cells[row][col];
-                if (cell.fg != fgColor || cell.bg != bgColor || cell.bold != isBold) {
+                if (cell.fg != fgColor || cell.bg != bgColor || cell.bold != isBold || cell.dim != isDim) {
                     break;
                 }
                 output.append(cell.value);
                 col++;
             }
             int end = output.length();
+            if (isDim) {
+                fgColor = blendColor(fgColor, bgColor == DEFAULT_BG ? TERMINAL_BG : bgColor, 0.55f);
+            }
             output.setSpan(new ForegroundColorSpan(fgColor), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             if (bgColor != DEFAULT_BG) {
                 output.setSpan(new BackgroundColorSpan(bgColor), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -613,6 +624,15 @@ final class TerminalScreenBuffer {
         return value == 0 ? 0 : 55 + value * 40;
     }
 
+    private static int blendColor(int foreground, int background, float foregroundRatio) {
+        float backgroundRatio = 1f - foregroundRatio;
+        return Color.rgb(
+                Math.round(Color.red(foreground) * foregroundRatio + Color.red(background) * backgroundRatio),
+                Math.round(Color.green(foreground) * foregroundRatio + Color.green(background) * backgroundRatio),
+                Math.round(Color.blue(foreground) * foregroundRatio + Color.blue(background) * backgroundRatio)
+        );
+    }
+
     private static int clamp(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
     }
@@ -622,19 +642,22 @@ final class TerminalScreenBuffer {
         int fg = DEFAULT_FG;
         int bg = DEFAULT_BG;
         boolean bold;
+        boolean dim;
 
         void clear() {
             value = ' ';
             fg = DEFAULT_FG;
             bg = DEFAULT_BG;
             bold = false;
+            dim = false;
         }
 
-        void set(char nextValue, int nextFg, int nextBg, boolean nextBold) {
+        void set(char nextValue, int nextFg, int nextBg, boolean nextBold, boolean nextDim) {
             value = nextValue;
             fg = nextFg;
             bg = nextBg;
             bold = nextBold;
+            dim = nextDim;
         }
 
         void copyFrom(Cell other) {
@@ -642,6 +665,7 @@ final class TerminalScreenBuffer {
             fg = other.fg;
             bg = other.bg;
             bold = other.bold;
+            dim = other.dim;
         }
     }
 }
