@@ -66,7 +66,7 @@ public final class MainActivity extends Activity {
     private static final int MAX_TERMINAL_COLS = 140;
     private static final int MIN_TERMINAL_ROWS = 8;
     private static final int MAX_TERMINAL_ROWS = 80;
-    private static final int TERMINAL_KEYS_HEIGHT_DP = 54;
+    private static final int TERMINAL_KEYS_HEIGHT_DP = 34;
     private static final int STATUS_NORMAL = 0;
     private static final int STATUS_BUSY = 1;
     private static final int STATUS_SUCCESS = 2;
@@ -126,6 +126,7 @@ public final class MainActivity extends Activity {
     private TextView terminalMetaText;
     private ScrollView terminalScroll;
     private EditText inputField;
+    private final Button[] terminalAccessoryTabButtons = new Button[4];
     private View terminalAccessoryBar;
     private View terminalComposerBar;
     private LinearLayout terminalGroupRow;
@@ -2067,7 +2068,32 @@ public final class MainActivity extends Activity {
 
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.BOTTOM);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+
+        LinearLayout tabGrid = new LinearLayout(this);
+        tabGrid.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout firstTabRow = terminalKeyRow();
+        LinearLayout secondTabRow = terminalKeyRow();
+        addAccessoryTab(firstTabRow, "Edit", 0);
+        addAccessoryTab(firstTabRow, "Ctrl", 1);
+        addAccessoryTab(secondTabRow, "Nav", 2);
+        addAccessoryTab(secondTabRow, "Sym", 3);
+        tabGrid.addView(firstTabRow, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1
+        ));
+        LinearLayout.LayoutParams secondTabParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1
+        );
+        secondTabParams.topMargin = dp(3);
+        tabGrid.addView(secondTabRow, secondTabParams);
+        row.addView(tabGrid, new LinearLayout.LayoutParams(
+                dp(72),
+                ViewGroup.LayoutParams.MATCH_PARENT
+        ));
 
         inputField = new EditText(this);
         inputField.setTextColor(COLOR_TEXT);
@@ -2100,9 +2126,6 @@ public final class MainActivity extends Activity {
             }
             return false;
         });
-        Button image = composerButton("Img", view -> pickImageForSession(activeSessionName));
-        image.setContentDescription("Upload image");
-        row.addView(image, new LinearLayout.LayoutParams(dp(38), dp(38)));
         LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(
                 0,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -2111,9 +2134,29 @@ public final class MainActivity extends Activity {
         inputParams.leftMargin = dp(5);
         inputParams.rightMargin = dp(5);
         row.addView(inputField, inputParams);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.VERTICAL);
         Button send = composerPrimaryButton("Send", view -> sendLine());
         send.setContentDescription("Send input");
-        row.addView(send, new LinearLayout.LayoutParams(dp(48), dp(38)));
+        actions.addView(send, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1
+        ));
+        Button image = composerButton("Img", view -> pickImageForSession(activeSessionName));
+        image.setContentDescription("Upload image");
+        LinearLayout.LayoutParams imageParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                0,
+                1
+        );
+        imageParams.topMargin = dp(3);
+        actions.addView(image, imageParams);
+        row.addView(actions, new LinearLayout.LayoutParams(
+                dp(48),
+                ViewGroup.LayoutParams.MATCH_PARENT
+        ));
         bar.addView(row, matchWrap());
         return bar;
     }
@@ -2682,17 +2725,6 @@ public final class MainActivity extends Activity {
         panel.setPadding(dp(6), dp(3), dp(6), dp(3));
         panel.setBackgroundColor(COLOR_PANEL);
 
-        LinearLayout tabs = terminalKeyRow();
-        tabs.setGravity(Gravity.CENTER_VERTICAL);
-        addAccessoryTab(tabs, "Edit", 0);
-        addAccessoryTab(tabs, "Ctrl", 1);
-        addAccessoryTab(tabs, "Nav", 2);
-        addAccessoryTab(tabs, "Sym", 3);
-        panel.addView(tabs, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(18)
-        ));
-
         HorizontalScrollView keyScroller = new HorizontalScrollView(this);
         keyScroller.setHorizontalScrollBarEnabled(false);
         keyScroller.setFillViewport(true);
@@ -2702,13 +2734,10 @@ public final class MainActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
         ));
-        LinearLayout.LayoutParams keyParams = new LinearLayout.LayoutParams(
+        panel.addView(keyScroller, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1
-        );
-        keyParams.topMargin = dp(2);
-        panel.addView(keyScroller, keyParams);
+                ViewGroup.LayoutParams.MATCH_PARENT
+        ));
         return panel;
     }
 
@@ -3053,6 +3082,7 @@ public final class MainActivity extends Activity {
 
     private void setTerminalKeyPage(int page) {
         terminalKeyPage = (page + 4) % 4;
+        updateAccessoryTabs();
         if (activeSessionName != null) {
             renderTerminalControlsOnly();
         }
@@ -3222,8 +3252,8 @@ public final class MainActivity extends Activity {
         Button button = toolbarButton(label, listener);
         button.setTextSize(10);
         button.setPadding(dp(5), 0, dp(5), 0);
-        button.setMinWidth(0);
-        button.setMinimumWidth(0);
+        button.setMinWidth(dp(38));
+        button.setMinimumWidth(dp(38));
         button.setMinHeight(0);
         button.setMinimumHeight(0);
         return button;
@@ -3310,8 +3340,8 @@ public final class MainActivity extends Activity {
         Button button = toolbarButton(label, listener);
         button.setTextSize(isArrowLabel(label) ? 14 : 9);
         button.setPadding(dp(5), 0, dp(5), 0);
-        button.setMinWidth(0);
-        button.setMinimumWidth(0);
+        button.setMinWidth(dp(38));
+        button.setMinimumWidth(dp(38));
         button.setMinHeight(0);
         button.setMinimumHeight(0);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -3326,24 +3356,39 @@ public final class MainActivity extends Activity {
 
     private void addAccessoryTab(LinearLayout row, String label, int page) {
         Button button = toolbarButton(label, view -> setTerminalKeyPage(page));
-        boolean selected = terminalKeyPage == page;
         button.setTextSize(8);
-        button.setPadding(dp(7), 0, dp(7), 0);
+        button.setPadding(dp(3), 0, dp(3), 0);
         button.setMinWidth(0);
         button.setMinimumWidth(0);
         button.setMinHeight(0);
         button.setMinimumHeight(0);
+        terminalAccessoryTabButtons[page] = button;
+        styleAccessoryTab(button, terminalKeyPage == page);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                1
+        );
+        if (row.getChildCount() > 0) {
+            params.leftMargin = dp(3);
+        }
+        row.addView(button, params);
+    }
+
+    private void updateAccessoryTabs() {
+        for (int page = 0; page < terminalAccessoryTabButtons.length; page++) {
+            Button button = terminalAccessoryTabButtons[page];
+            if (button != null) {
+                styleAccessoryTab(button, terminalKeyPage == page);
+            }
+        }
+    }
+
+    private void styleAccessoryTab(Button button, boolean selected) {
         button.setTextColor(selected ? Color.rgb(14, 38, 24) : COLOR_TEXT_MUTED);
         button.setBackground(selected
-                ? rounded(COLOR_ACCENT, 7, COLOR_ACCENT, 1)
-                : rounded(COLOR_CARD_ALT, 7, COLOR_BORDER_SOFT, 1));
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0
-        );
-        params.rightMargin = dp(2);
-        row.addView(button, params);
+                ? rounded(COLOR_ACCENT, 6, COLOR_ACCENT, 1)
+                : rounded(COLOR_CARD_ALT, 6, COLOR_BORDER_SOFT, 1));
     }
 
     private boolean isArrowLabel(String label) {
