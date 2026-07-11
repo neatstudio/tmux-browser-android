@@ -2722,7 +2722,7 @@ public final class MainActivity extends Activity {
     private LinearLayout createAccessoryBar() {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(6), dp(3), dp(6), dp(3));
+        panel.setPadding(dp(4), dp(3), dp(4), dp(3));
         panel.setBackgroundColor(COLOR_PANEL);
 
         HorizontalScrollView keyScroller = new HorizontalScrollView(this);
@@ -2773,8 +2773,6 @@ public final class MainActivity extends Activity {
                 addSoftKey(row, "End", "\u001b[F");
                 addSoftKey(row, "Pg↑", "\u001b[5~");
                 addSoftKey(row, "Pg↓", "\u001b[6~");
-                addComposerButton(row, "Prev", () -> setTerminalKeyPage(terminalKeyPage - 1));
-                addComposerButton(row, "Next", () -> setTerminalKeyPage(terminalKeyPage + 1));
                 addSoftKey(row, "Clear", "\u000c");
                 addSoftKey(row, "Detach", "\u0002d");
                 break;
@@ -2800,12 +2798,12 @@ public final class MainActivity extends Activity {
                 addSoftKey(row, "↓", "\u001b[B");
                 addSoftKey(row, "Esc", "\u001b");
                 addSoftKey(row, "Tab", "\t");
-                addSoftKey(row, "Enter", TERMINAL_ENTER);
+                addSoftKey(row, "↵", TERMINAL_ENTER);
                 addSoftButton(row, "Paste", view -> pasteClipboard());
                 addComposerButton(row, "⌫", this::backspaceComposerText);
                 addTextKey(row, "NL", "\n");
-                addComposerButton(row, "Bottom", this::scrollTerminalBottom);
-                addComposerButton(row, "Select", () -> {
+                addComposerButton(row, "Bot", this::scrollTerminalBottom);
+                addComposerButton(row, "Sel", () -> {
                     terminalSelectionEnabled = !terminalSelectionEnabled;
                     if (terminalText != null) {
                         terminalText.setTextIsSelectable(terminalSelectionEnabled);
@@ -3339,9 +3337,9 @@ public final class MainActivity extends Activity {
     private void addSoftButton(LinearLayout row, String label, View.OnClickListener listener) {
         Button button = toolbarButton(label, listener);
         button.setTextSize(isArrowLabel(label) ? 14 : 9);
-        button.setPadding(dp(5), 0, dp(5), 0);
-        button.setMinWidth(dp(38));
-        button.setMinimumWidth(dp(38));
+        button.setPadding(dp(2), 0, dp(2), 0);
+        button.setMinWidth(dp(24));
+        button.setMinimumWidth(dp(24));
         button.setMinHeight(0);
         button.setMinimumHeight(0);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -3349,7 +3347,6 @@ public final class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0
         );
-        params.leftMargin = dp(1);
         params.rightMargin = dp(1);
         row.addView(button, params);
     }
