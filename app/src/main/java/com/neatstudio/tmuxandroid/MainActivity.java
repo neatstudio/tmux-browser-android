@@ -3695,9 +3695,14 @@ public final class MainActivity extends Activity {
                     throw new IllegalStateException("Cannot open selected image");
                 }
                 String response = api.uploadImage(sessionName, readAllBytes(input));
+                String imagePath = new JSONObject(response).optString("absolutePath", "").trim();
+                if (imagePath.isEmpty()) {
+                    throw new IllegalStateException("Upload response did not include absolutePath");
+                }
                 runOnUiThread(() -> {
                     progressBar.setVisibility(View.GONE);
-                    showTextDialog("Image upload", response);
+                    insertComposerPath(imagePath);
+                    setStatus("Image path inserted");
                 });
             } catch (Exception error) {
                 runOnUiThread(() -> {
@@ -3717,6 +3722,21 @@ public final class MainActivity extends Activity {
             output.write(buffer, 0, read);
         }
         return output.toByteArray();
+    }
+
+    private void insertComposerPath(String path) {
+        if (inputField == null) {
+            return;
+        }
+        int start = Math.max(0, inputField.getSelectionStart());
+        int end = Math.max(0, inputField.getSelectionEnd());
+        int from = Math.min(start, end);
+        int to = Math.max(start, end);
+        CharSequence current = inputField.getText();
+        String prefix = from > 0 && !Character.isWhitespace(current.charAt(from - 1)) ? " " : "";
+        String suffix = to < current.length() && Character.isWhitespace(current.charAt(to)) ? "" : " ";
+        inputField.getText().replace(from, to, prefix + path + suffix);
+        inputField.requestFocus();
     }
 
     @Override
