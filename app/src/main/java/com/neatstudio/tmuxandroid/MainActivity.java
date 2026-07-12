@@ -132,6 +132,8 @@ public final class MainActivity extends Activity {
     private Button terminalReadingButton;
     private ScrollView terminalScroll;
     private LinearLayout terminalChatList;
+    private TextView terminalLiveStatusText;
+    private TextView terminalLiveOutputText;
     private EditText inputField;
     private final Button[] terminalAccessoryTabButtons = new Button[4];
     private View terminalAccessoryBar;
@@ -1614,6 +1616,8 @@ public final class MainActivity extends Activity {
         terminalExpandedBlocks.clear();
         terminalExpandedMessages.clear();
         terminalConversationMessages.clear();
+        terminalLiveStatusText = null;
+        terminalLiveOutputText = null;
         terminalImagePath = "";
         terminalImagePreviewBar = null;
         terminalImagePreview = null;
@@ -1959,13 +1963,15 @@ public final class MainActivity extends Activity {
         if (terminalConversationMessages.isEmpty()) {
             TextView empty = bodyText("No structured messages yet");
             empty.setGravity(Gravity.CENTER);
-            empty.setPadding(dp(12), dp(32), dp(12), dp(32));
+            empty.setPadding(dp(12), dp(24), dp(12), dp(24));
             terminalChatList.addView(empty, matchWrap());
-            return;
+        } else {
+            for (ConversationMessage message : terminalConversationMessages) {
+                terminalChatList.addView(conversationMessageRow(message));
+            }
         }
-        for (ConversationMessage message : terminalConversationMessages) {
-            terminalChatList.addView(conversationMessageRow(message));
-        }
+        terminalChatList.addView(conversationLiveTerminalPanel(), matchWrap());
+        updateTerminalLivePanel();
         if (terminalViewMode == TERMINAL_VIEW_CHAT && terminalFollowOutput && terminalScroll != null) {
             terminalScroll.post(() -> terminalScroll.fullScroll(View.FOCUS_DOWN));
         }
@@ -2066,7 +2072,62 @@ public final class MainActivity extends Activity {
 
     private String conversationStatusPart(ConversationMessage message) {
         String status = message.status.trim();
-        return status.isEmpty() || "complete".equals(status) ? "" : " · " + status;
+        return status.isEmpty() ? "" : " · " + status;
+    }
+
+    private View conversationLiveTerminalPanel() {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(12), dp(9), dp(12), dp(10));
+        panel.setBackground(rounded(COLOR_FIELD, 8, COLOR_BORDER, 1));
+        panel.setOnClickListener(view -> showTerminalView(TERMINAL_VIEW_FULL, true));
+
+        LinearLayout heading = new LinearLayout(this);
+        heading.setOrientation(LinearLayout.HORIZONTAL);
+        heading.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = new TextView(this);
+        title.setText("Live terminal");
+        title.setTextColor(COLOR_TEXT);
+        title.setTextSize(11);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        heading.addView(title, new LinearLayout.LayoutParams(0, dp(22), 1));
+        terminalLiveStatusText = new TextView(this);
+        terminalLiveStatusText.setTextSize(9);
+        terminalLiveStatusText.setTypeface(Typeface.MONOSPACE);
+        terminalLiveStatusText.setSingleLine(true);
+        heading.addView(terminalLiveStatusText, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                dp(22)
+        ));
+        panel.addView(heading, matchWrap());
+
+        terminalLiveOutputText = new TextView(this);
+        terminalLiveOutputText.setTextColor(COLOR_TEXT_MUTED);
+        terminalLiveOutputText.setTextSize(10);
+        terminalLiveOutputText.setTypeface(Typeface.MONOSPACE);
+        terminalLiveOutputText.setMaxLines(6);
+        terminalLiveOutputText.setEllipsize(TextUtils.TruncateAt.END);
+        terminalLiveOutputText.setPadding(0, dp(5), 0, 0);
+        panel.addView(terminalLiveOutputText, matchWrap());
+
+        TextView hint = bodyText("Tap for full terminal");
+        hint.setTextSize(9);
+        hint.setTextColor(COLOR_TEXT_DIM);
+        hint.setPadding(0, dp(6), 0, 0);
+        panel.addView(hint, matchWrap());
+        return panel;
+    }
+
+    private void updateTerminalLivePanel() {
+        if (terminalLiveStatusText == null || terminalLiveOutputText == null) {
+            return;
+        }
+        String socket = terminalSocketStatus.toLowerCase(java.util.Locale.ROOT);
+        boolean connected = socket.contains("connected") && !socket.contains("disconnected");
+        terminalLiveStatusText.setText(connected ? "● connected" : "● " + defaultValue(socket, "connecting"));
+        terminalLiveStatusText.setTextColor(connected ? COLOR_SUCCESS
+                : socket.contains("error") || socket.contains("disconnected") ? COLOR_DANGER : COLOR_ACCENT_WARM);
+        terminalLiveOutputText.setText(terminalScreen.renderTail(6));
     }
 
     private void updateTerminalMeta() {
@@ -2085,6 +2146,7 @@ public final class MainActivity extends Activity {
             terminalConnectionText.setText("● connecting");
             terminalConnectionText.setTextColor(COLOR_ACCENT_WARM);
         }
+        updateTerminalLivePanel();
     }
 
     private String compactTerminalPath(String path) {
@@ -3558,6 +3620,7 @@ public final class MainActivity extends Activity {
             terminalText.setMovementMethod(null);
             terminalText.setText(terminalScreen.render());
         }
+        updateTerminalLivePanel();
         if (terminalViewMode != TERMINAL_VIEW_CHAT && terminalFollowOutput) {
             terminalScroll.post(() -> terminalScroll.fullScroll(View.FOCUS_DOWN));
         }

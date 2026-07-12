@@ -130,6 +130,20 @@ final class TerminalScreenBuffer {
         return output;
     }
 
+    String renderTail(int maxRows) {
+        List<String> visible = new ArrayList<>();
+        for (int row = rows - 1; row >= 0 && visible.size() < maxRows; row--) {
+            String text = rowText(row).trim();
+            if (!text.isEmpty()) {
+                visible.add(0, text);
+            }
+        }
+        if (visible.isEmpty()) {
+            return "Waiting for terminal output";
+        }
+        return String.join("\n", visible);
+    }
+
     CharSequence renderFocused(Set<String> expandedBlocks, FocusToggle toggle) {
         SpannableStringBuilder output = new SpannableStringBuilder();
         List<String> hiddenRows = new ArrayList<>();
