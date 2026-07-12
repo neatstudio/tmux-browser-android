@@ -124,11 +124,17 @@ public final class MainActivity extends Activity {
     private LinearLayout sessionGroupList;
     private TextView terminalText;
     private TextView terminalMetaText;
+    private TextView terminalConnectionText;
+    private Button terminalReadingButton;
     private ScrollView terminalScroll;
     private EditText inputField;
     private final Button[] terminalAccessoryTabButtons = new Button[4];
     private View terminalAccessoryBar;
     private View terminalComposerBar;
+    private LinearLayout terminalImagePreviewBar;
+    private ImageView terminalImagePreview;
+    private TextView terminalImagePreviewPath;
+    private String terminalImagePath = "";
     private LinearLayout terminalGroupRow;
     private String activeSessionName;
     private String terminalPathStatus = "";
@@ -145,6 +151,7 @@ public final class MainActivity extends Activity {
     private boolean terminalRenderPending;
     private boolean terminalSelectionEnabled;
     private boolean terminalFollowOutput = true;
+    private boolean terminalReadingMode = true;
     private int terminalKeyPage;
     private int terminalReconnectAttempt;
     private int terminalConnectionGeneration;
@@ -1596,6 +1603,10 @@ public final class MainActivity extends Activity {
         terminalSelectionEnabled = false;
         terminalFollowOutput = true;
         terminalKeyPage = 0;
+        terminalImagePath = "";
+        terminalImagePreviewBar = null;
+        terminalImagePreview = null;
+        terminalImagePreviewPath = null;
         terminalPathStatus = "path loading";
         terminalSocketStatus = "terminal idle";
         terminalEventStatus = "events listening";
@@ -1614,9 +1625,10 @@ public final class MainActivity extends Activity {
         terminalScroll.setBackgroundColor(COLOR_TERMINAL_BG);
         terminalText = new TextView(this);
         terminalText.setTextColor(COLOR_TEXT);
-        terminalText.setTextSize(13);
+        terminalText.setTextSize(11);
         terminalText.setTypeface(Typeface.MONOSPACE);
         terminalText.setIncludeFontPadding(false);
+        terminalText.setHorizontallyScrolling(!terminalReadingMode);
         terminalText.setLineSpacing(0, 1.05f);
         terminalText.setGravity(Gravity.BOTTOM | Gravity.START);
         terminalText.setTextIsSelectable(terminalSelectionEnabled);
@@ -1667,6 +1679,10 @@ public final class MainActivity extends Activity {
         titleBlock.setGravity(Gravity.CENTER_VERTICAL);
         titleBlock.setPadding(dp(9), 0, dp(7), 0);
 
+        LinearLayout titleRow = new LinearLayout(this);
+        titleRow.setOrientation(LinearLayout.HORIZONTAL);
+        titleRow.setGravity(Gravity.CENTER_VERTICAL);
+
         TextView title = new TextView(this);
         title.setText(sessionName);
         title.setTextColor(COLOR_TEXT);
@@ -1675,6 +1691,22 @@ public final class MainActivity extends Activity {
         title.setSingleLine(true);
         title.setEllipsize(TextUtils.TruncateAt.END);
         title.setIncludeFontPadding(false);
+        titleRow.addView(title, new LinearLayout.LayoutParams(
+                0,
+                dp(17),
+                1
+        ));
+
+        terminalConnectionText = new TextView(this);
+        terminalConnectionText.setTextSize(9);
+        terminalConnectionText.setTypeface(Typeface.MONOSPACE);
+        terminalConnectionText.setSingleLine(true);
+        terminalConnectionText.setIncludeFontPadding(false);
+        terminalConnectionText.setPadding(dp(7), 0, 0, 0);
+        titleRow.addView(terminalConnectionText, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                dp(17)
+        ));
 
         terminalMetaText = new TextView(this);
         terminalMetaText.setTextColor(COLOR_TEXT_DIM);
@@ -1685,7 +1717,7 @@ public final class MainActivity extends Activity {
         terminalMetaText.setIncludeFontPadding(false);
         updateTerminalMeta();
 
-        titleBlock.addView(title, new LinearLayout.LayoutParams(
+        titleBlock.addView(titleRow, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(17)
         ));
@@ -1694,8 +1726,34 @@ public final class MainActivity extends Activity {
                 dp(13)
         ));
         bar.addView(titleBlock, new LinearLayout.LayoutParams(0, dp(32), 1));
+        terminalReadingButton = terminalToolButton("读", view ->
+                setTerminalReadingMode(!terminalReadingMode));
+        terminalReadingButton.setContentDescription("Toggle Chinese reading mode");
+        styleTerminalReadingButton();
+        bar.addView(terminalReadingButton);
         bar.addView(terminalToolButton("☰", view -> showTerminalActions(sessionName)));
         return bar;
+    }
+
+    private void setTerminalReadingMode(boolean reading) {
+        terminalReadingMode = reading;
+        if (terminalText != null) {
+            terminalText.setHorizontallyScrolling(!reading);
+        }
+        styleTerminalReadingButton();
+        renderTerminalNow();
+        setStatus(reading ? "Chinese reading mode" : "Full terminal mode");
+    }
+
+    private void styleTerminalReadingButton() {
+        if (terminalReadingButton == null) {
+            return;
+        }
+        terminalReadingButton.setText(terminalReadingMode ? "读" : "终");
+        terminalReadingButton.setTextColor(terminalReadingMode ? Color.rgb(14, 38, 24) : COLOR_TEXT_MUTED);
+        terminalReadingButton.setBackground(terminalReadingMode
+                ? rounded(COLOR_ACCENT, 7, COLOR_ACCENT, 1)
+                : buttonBackground());
     }
 
     private HorizontalScrollView createTerminalGroupBar() {
@@ -1737,18 +1795,13 @@ public final class MainActivity extends Activity {
             try {
                 List<SessionSummary> sessions = api.getSessions();
                 String path = "";
-                String command = "";
                 for (SessionSummary session : sessions) {
                     if (sessionName.equals(session.name)) {
                         path = defaultValue(session.currentPath, "");
-                        command = defaultValue(session.currentCommand, "");
                         break;
                     }
                 }
-                String meta = path.isEmpty() ? "path unavailable" : path;
-                if (!command.isEmpty()) {
-                    meta = meta + "  ·  " + command;
-                }
+                String meta = path.isEmpty() ? "path unavailable" : compactTerminalPath(path);
                 String finalMeta = meta;
                 runOnUiThread(() -> {
                     if (sessionName.equals(activeSessionName)) {
@@ -1768,18 +1821,28 @@ public final class MainActivity extends Activity {
     }
 
     private void updateTerminalMeta() {
-        if (terminalMetaText == null) {
+        if (terminalMetaText == null || terminalConnectionText == null) {
             return;
         }
-        StringBuilder meta = new StringBuilder();
-        meta.append(defaultValue(terminalPathStatus, "path loading"));
-        if (!terminalSocketStatus.isEmpty()) {
-            meta.append("  ·  ").append(terminalSocketStatus);
+        terminalMetaText.setText(defaultValue(terminalPathStatus, "path loading"));
+        String socket = terminalSocketStatus.toLowerCase(java.util.Locale.ROOT);
+        if (socket.contains("connected") && !socket.contains("disconnected")) {
+            terminalConnectionText.setText("● connected");
+            terminalConnectionText.setTextColor(COLOR_SUCCESS);
+        } else if (socket.contains("error") || socket.contains("disconnected")) {
+            terminalConnectionText.setText("● disconnected");
+            terminalConnectionText.setTextColor(COLOR_DANGER);
+        } else {
+            terminalConnectionText.setText("● connecting");
+            terminalConnectionText.setTextColor(COLOR_ACCENT_WARM);
         }
-        if (!terminalEventStatus.isEmpty()) {
-            meta.append("  ·  ").append(terminalEventStatus);
-        }
-        terminalMetaText.setText(meta.toString());
+    }
+
+    private String compactTerminalPath(String path) {
+        String compact = path.trim();
+        compact = compact.replaceFirst("^/home/[^/]+(?=/|$)", "~");
+        compact = compact.replaceFirst("^/Users/[^/]+(?=/|$)", "~");
+        return compact;
     }
 
     private void renderTerminalGroupSessions(String sessionName, String text) {
@@ -1992,6 +2055,7 @@ public final class MainActivity extends Activity {
                 "Clear local view and tmux history",
                 "Split horizontal",
                 "Split vertical",
+                "Zoom active pane",
                 "Page up",
                 "Page down",
                 "Session status",
@@ -2023,34 +2087,37 @@ public final class MainActivity extends Activity {
                             runApiAction("Split vertical", () -> api.splitPane(sessionName, "vertical"));
                             break;
                         case 4:
+                            sendTerminalInput("\u0002z");
+                            break;
+                        case 5:
                             if (terminalSocket != null) {
                                 terminalSocket.scroll(-terminalRows);
                             }
                             break;
-                        case 5:
+                        case 6:
                             if (terminalSocket != null) {
                                 terminalSocket.scroll(terminalRows);
                             }
                             break;
-                        case 6:
+                        case 7:
                             showRaw("Session status", () -> api.sessionStatus(sessionName));
                             break;
-                        case 7:
+                        case 8:
                             promptSendCommand(sessionName);
                             break;
-                        case 8:
+                        case 9:
                             sendTerminalInput("\u0002");
                             break;
-                        case 9:
+                        case 10:
                             sendTerminalInput("\u0002d");
                             break;
-                        case 10:
+                        case 11:
                             sendTerminalInput("\u0002c");
                             break;
-                        case 11:
+                        case 12:
                             sendTerminalInput("\u0002n");
                             break;
-                        case 12:
+                        case 13:
                             sendTerminalInput("\u0002p");
                             break;
                         default:
@@ -2065,6 +2132,12 @@ public final class MainActivity extends Activity {
         bar.setOrientation(LinearLayout.VERTICAL);
         bar.setPadding(dp(8), dp(5), dp(8), dp(7));
         bar.setBackgroundColor(COLOR_BAR);
+
+        terminalImagePreviewBar = createComposerImagePreviewBar();
+        bar.addView(terminalImagePreviewBar, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(64)
+        ));
 
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -2159,6 +2232,87 @@ public final class MainActivity extends Activity {
         ));
         bar.addView(row, matchWrap());
         return bar;
+    }
+
+    private LinearLayout createComposerImagePreviewBar() {
+        LinearLayout previewBar = new LinearLayout(this);
+        previewBar.setOrientation(LinearLayout.HORIZONTAL);
+        previewBar.setGravity(Gravity.CENTER_VERTICAL);
+        previewBar.setPadding(dp(4), dp(3), dp(2), dp(7));
+        previewBar.setVisibility(View.GONE);
+
+        terminalImagePreview = new ImageView(this);
+        terminalImagePreview.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        terminalImagePreview.setAdjustViewBounds(false);
+        terminalImagePreview.setBackground(rounded(COLOR_FIELD, 6, COLOR_BORDER, 1));
+        terminalImagePreview.setContentDescription("Open uploaded image preview");
+        terminalImagePreview.setOnClickListener(view -> {
+            if (!terminalImagePath.isEmpty()) {
+                showImagePreview(terminalImagePath, "");
+            }
+        });
+        previewBar.addView(terminalImagePreview, new LinearLayout.LayoutParams(dp(52), dp(52)));
+
+        terminalImagePreviewPath = bodyText("Loading image preview...");
+        terminalImagePreviewPath.setSingleLine(true);
+        terminalImagePreviewPath.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+        terminalImagePreviewPath.setTextSize(10);
+        LinearLayout.LayoutParams pathParams = new LinearLayout.LayoutParams(0, dp(52), 1);
+        pathParams.leftMargin = dp(9);
+        previewBar.addView(terminalImagePreviewPath, pathParams);
+
+        Button clear = terminalToolButton("×", view -> clearComposerImagePreview());
+        clear.setContentDescription("Clear image preview");
+        previewBar.addView(clear);
+        return previewBar;
+    }
+
+    private void loadComposerImagePreview(String path) {
+        if (terminalImagePreviewBar == null || path == null || path.isEmpty()) {
+            return;
+        }
+        terminalImagePath = path;
+        terminalImagePreview.setImageDrawable(null);
+        terminalImagePreviewPath.setText("Loading  " + path);
+        terminalImagePreviewBar.setVisibility(View.VISIBLE);
+        int generation = terminalConnectionGeneration;
+        ImageView preview = terminalImagePreview;
+        TextView previewPath = terminalImagePreviewPath;
+        executor.execute(() -> {
+            try {
+                byte[] bytes = api.imagePreview(path, "");
+                Bitmap bitmap = decodePreviewBitmap(bytes, 1200);
+                if (bitmap == null) {
+                    throw new IllegalStateException("Preview is not a supported bitmap");
+                }
+                runOnUiThread(() -> {
+                    if (generation == terminalConnectionGeneration
+                            && path.equals(terminalImagePath)
+                            && preview == terminalImagePreview) {
+                        preview.setImageBitmap(bitmap);
+                        previewPath.setText(path);
+                    }
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    if (generation == terminalConnectionGeneration
+                            && path.equals(terminalImagePath)
+                            && previewPath == terminalImagePreviewPath) {
+                        previewPath.setText("Preview unavailable  " + path);
+                    }
+                });
+            }
+        });
+    }
+
+    private void clearComposerImagePreview() {
+        terminalImagePath = "";
+        if (terminalImagePreview != null) {
+            terminalImagePreview.setImageDrawable(null);
+        }
+        if (terminalImagePreviewBar != null) {
+            terminalImagePreviewBar.setVisibility(View.GONE);
+        }
     }
 
     private void promptRenameSession(String sessionName) {
@@ -2589,7 +2743,7 @@ public final class MainActivity extends Activity {
         executor.execute(() -> {
             try {
                 byte[] bytes = api.imagePreview(path, basePath);
-                Bitmap bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+                Bitmap bitmap = decodePreviewBitmap(bytes, 1800);
                 if (bitmap == null) {
                     throw new IllegalStateException("Preview is not a supported bitmap");
                 }
@@ -2612,6 +2766,23 @@ public final class MainActivity extends Activity {
                 });
             }
         });
+    }
+
+    private Bitmap decodePreviewBitmap(byte[] bytes, int maxDimension) {
+        BitmapFactory.Options bounds = new BitmapFactory.Options();
+        bounds.inJustDecodeBounds = true;
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.length, bounds);
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            return null;
+        }
+        int sampleSize = 1;
+        while (bounds.outWidth / sampleSize > maxDimension
+                || bounds.outHeight / sampleSize > maxDimension) {
+            sampleSize *= 2;
+        }
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inSampleSize = sampleSize;
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
     }
 
     private void promptText(String title, String hint, String value, TextApiAction action) {
@@ -2906,7 +3077,7 @@ public final class MainActivity extends Activity {
         }
         int horizontalPadding = terminalText.getPaddingLeft() + terminalText.getPaddingRight();
         int verticalPadding = terminalText.getPaddingTop() + terminalText.getPaddingBottom();
-        float charWidth = terminalText.getPaint().measureText("W");
+        float charWidth = terminalText.getPaint().measureText("0000000000") / 10f;
         if (charWidth <= 0f) {
             charWidth = dp(8);
         }
@@ -3122,7 +3293,9 @@ public final class MainActivity extends Activity {
             return;
         }
         lastTerminalRenderMs = System.currentTimeMillis();
-        terminalText.setText(terminalScreen.render());
+        terminalText.setText(terminalReadingMode
+                ? terminalScreen.renderFocused()
+                : terminalScreen.render());
         if (terminalFollowOutput) {
             terminalScroll.post(() -> terminalScroll.fullScroll(View.FOCUS_DOWN));
         }
@@ -3702,6 +3875,7 @@ public final class MainActivity extends Activity {
                 runOnUiThread(() -> {
                     progressBar.setVisibility(View.GONE);
                     insertComposerPath(imagePath);
+                    loadComposerImagePreview(imagePath);
                     setStatus("Image path inserted");
                 });
             } catch (Exception error) {

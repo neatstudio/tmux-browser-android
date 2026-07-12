@@ -134,6 +134,42 @@ final class TerminalScreenBuffer {
         return output;
     }
 
+    CharSequence renderFocused() {
+        List<String> visible = new ArrayList<>();
+        int hiddenRows = 0;
+        for (int row = 0; row < rows; row++) {
+            String text = rowText(row).trim();
+            if (containsHan(text)) {
+                if (hiddenRows > 0) {
+                    visible.add("... 已折叠 " + hiddenRows + " 行终端内容 ...");
+                    hiddenRows = 0;
+                }
+                visible.add(text);
+            } else if (!text.isEmpty()) {
+                hiddenRows++;
+            }
+        }
+        if (hiddenRows > 0) {
+            visible.add("... 已折叠 " + hiddenRows + " 行终端内容 ...");
+        }
+        if (visible.isEmpty()) {
+            for (int row = Math.max(0, rows - 4); row < rows; row++) {
+                String text = rowText(row).trim();
+                if (!text.isEmpty()) {
+                    visible.add(text);
+                }
+            }
+        }
+        StringBuilder output = new StringBuilder();
+        for (int index = 0; index < visible.size(); index++) {
+            if (index > 0) {
+                output.append('\n');
+            }
+            output.append(visible.get(index));
+        }
+        return output;
+    }
+
     private int handleEscape(String text, int index) {
         if (index + 1 >= text.length()) {
             return -1;
@@ -309,12 +345,32 @@ final class TerminalScreenBuffer {
             wrapPending = false;
             newLine();
         }
+        int width = isWideCharacter(value) ? 2 : 1;
+        if (width == 2 && cursorCol == cols - 1) {
+            newLine();
+        }
         cells[cursorRow][cursorCol].set(value, fg, bg, bold, dim);
-        if (cursorCol == cols - 1) {
+        if (width == 2) {
+            cells[cursorRow][cursorCol + 1].setContinuation(fg, bg, bold, dim);
+        }
+        if (cursorCol + width >= cols) {
+            cursorCol = cols - 1;
             wrapPending = true;
         } else {
-            cursorCol++;
+            cursorCol += width;
         }
+    }
+
+    private boolean isWideCharacter(char value) {
+        return value >= '\u1100' && (value <= '\u115f'
+                || value == '\u2329' || value == '\u232a'
+                || (value >= '\u2e80' && value <= '\ua4cf' && value != '\u303f')
+                || (value >= '\uac00' && value <= '\ud7a3')
+                || (value >= '\uf900' && value <= '\ufaff')
+                || (value >= '\ufe10' && value <= '\ufe19')
+                || (value >= '\ufe30' && value <= '\ufe6f')
+                || (value >= '\uff00' && value <= '\uff60')
+                || (value >= '\uffe0' && value <= '\uffe6'));
     }
 
     private void newLine() {
@@ -466,7 +522,9 @@ final class TerminalScreenBuffer {
                 if (cell.fg != fgColor || cell.bg != bgColor || cell.bold != isBold || cell.dim != isDim) {
                     break;
                 }
-                output.append(cell.value);
+                if (!cell.continuation) {
+                    output.append(cell.value);
+                }
                 col++;
             }
             int end = output.length();
@@ -481,6 +539,29 @@ final class TerminalScreenBuffer {
                 output.setSpan(new StyleSpan(Typeface.BOLD), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
         }
+    }
+
+    private String rowText(int row) {
+        StringBuilder text = new StringBuilder(cols);
+        for (int col = 0; col < cols; col++) {
+            Cell cell = cells[row][col];
+            if (!cell.continuation) {
+                text.append(cell.value);
+            }
+        }
+        return text.toString();
+    }
+
+    private boolean containsHan(String text) {
+        for (int index = 0; index < text.length(); index++) {
+            Character.UnicodeBlock block = Character.UnicodeBlock.of(text.charAt(index));
+            if (block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS
+                    || block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A
+                    || block == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void saveCursor() {
@@ -643,6 +724,7 @@ final class TerminalScreenBuffer {
         int bg = DEFAULT_BG;
         boolean bold;
         boolean dim;
+        boolean continuation;
 
         void clear() {
             value = ' ';
@@ -650,6 +732,7 @@ final class TerminalScreenBuffer {
             bg = DEFAULT_BG;
             bold = false;
             dim = false;
+            continuation = false;
         }
 
         void set(char nextValue, int nextFg, int nextBg, boolean nextBold, boolean nextDim) {
@@ -658,6 +741,16 @@ final class TerminalScreenBuffer {
             bg = nextBg;
             bold = nextBold;
             dim = nextDim;
+            continuation = false;
+        }
+
+        void setContinuation(int nextFg, int nextBg, boolean nextBold, boolean nextDim) {
+            value = ' ';
+            fg = nextFg;
+            bg = nextBg;
+            bold = nextBold;
+            dim = nextDim;
+            continuation = true;
         }
 
         void copyFrom(Cell other) {
@@ -666,6 +759,7 @@ final class TerminalScreenBuffer {
             bg = other.bg;
             bold = other.bold;
             dim = other.dim;
+            continuation = other.continuation;
         }
     }
 }
