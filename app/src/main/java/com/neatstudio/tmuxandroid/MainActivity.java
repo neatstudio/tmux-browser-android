@@ -1633,7 +1633,7 @@ public final class MainActivity extends Activity {
         terminalText.setIncludeFontPadding(false);
         terminalText.setHorizontallyScrolling(!terminalReadingMode);
         terminalText.setLineSpacing(0, 1.05f);
-        terminalText.setGravity(Gravity.BOTTOM | Gravity.START);
+        terminalText.setGravity((terminalReadingMode ? Gravity.TOP : Gravity.BOTTOM) | Gravity.START);
         terminalText.setTextIsSelectable(terminalSelectionEnabled);
         terminalText.setPadding(dp(2), dp(8), dp(2), dp(8));
         terminalText.setBackgroundColor(COLOR_TERMINAL_BG);
@@ -1742,6 +1742,7 @@ public final class MainActivity extends Activity {
         terminalReadingMode = reading;
         if (terminalText != null) {
             terminalText.setHorizontallyScrolling(!reading);
+            terminalText.setGravity((reading ? Gravity.TOP : Gravity.BOTTOM) | Gravity.START);
             terminalText.setMovementMethod(reading ? LinkMovementMethod.getInstance() : null);
         }
         styleTerminalReadingButton();
