@@ -128,6 +128,7 @@ public final class MainActivity extends Activity {
     private TextView terminalMetaText;
     private TextView terminalConnectionText;
     private Button terminalReadingButton;
+    private Button terminalFullButton;
     private ScrollView terminalScroll;
     private LinearLayout terminalChatList;
     private TextView terminalLiveStatusText;
@@ -136,6 +137,7 @@ public final class MainActivity extends Activity {
     private final Button[] terminalAccessoryTabButtons = new Button[4];
     private View terminalAccessoryBar;
     private View terminalComposerBar;
+    private View terminalComposerTabs;
     private LinearLayout terminalImagePreviewBar;
     private ImageView terminalImagePreview;
     private TextView terminalImagePreviewPath;
@@ -1660,6 +1662,7 @@ public final class MainActivity extends Activity {
                 1
         ));
         terminalAccessoryBar = createAccessoryBar();
+        terminalAccessoryBar.setVisibility(terminalViewMode == TERMINAL_VIEW_CHAT ? View.GONE : View.VISIBLE);
         root.addView(terminalAccessoryBar, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(TERMINAL_KEYS_HEIGHT_DP)
@@ -1762,13 +1765,13 @@ public final class MainActivity extends Activity {
                 dp(13)
         ));
         bar.addView(titleBlock, new LinearLayout.LayoutParams(0, dp(32), 1));
-        terminalReadingButton = terminalToolButton("聊", view -> showTerminalView(
-                terminalViewMode == TERMINAL_VIEW_CHAT ? TERMINAL_VIEW_FULL : TERMINAL_VIEW_CHAT,
-                true
-        ));
-        terminalReadingButton.setContentDescription("Toggle chat and terminal view");
+        terminalReadingButton = terminalToolButton("聊", view -> showTerminalView(TERMINAL_VIEW_CHAT, true));
+        terminalReadingButton.setContentDescription("Chat view");
+        terminalFullButton = terminalToolButton("终", view -> showTerminalView(TERMINAL_VIEW_FULL, true));
+        terminalFullButton.setContentDescription("Full terminal view");
         styleTerminalReadingButton();
         bar.addView(terminalReadingButton);
+        bar.addView(terminalFullButton);
         bar.addView(terminalToolButton("☰", view -> showTerminalActions(sessionName)));
         return bar;
     }
@@ -1797,21 +1800,32 @@ public final class MainActivity extends Activity {
             renderTerminalNow();
         }
         styleTerminalReadingButton();
+        boolean chat = mode == TERMINAL_VIEW_CHAT;
+        if (terminalAccessoryBar != null) {
+            terminalAccessoryBar.setVisibility(chat ? View.GONE : View.VISIBLE);
+        }
+        if (terminalComposerTabs != null) {
+            terminalComposerTabs.setVisibility(chat ? View.GONE : View.VISIBLE);
+        }
+        if (inputField != null) {
+            inputField.setHint(chat ? "Message" : "type command or text");
+        }
         if (announce) {
             setStatus(mode == TERMINAL_VIEW_CHAT ? "Chat view" : "Full terminal mode");
         }
     }
 
     private void styleTerminalReadingButton() {
-        if (terminalReadingButton == null) {
+        if (terminalReadingButton == null || terminalFullButton == null) {
             return;
         }
-        terminalReadingButton.setText(terminalViewMode == TERMINAL_VIEW_CHAT ? "聊" : "终");
-        terminalReadingButton.setTextColor(terminalViewMode == TERMINAL_VIEW_CHAT
-                ? Color.rgb(14, 38, 24) : COLOR_TEXT_MUTED);
-        terminalReadingButton.setBackground(terminalViewMode == TERMINAL_VIEW_CHAT
-                ? rounded(COLOR_ACCENT, 7, COLOR_ACCENT, 1)
-                : buttonBackground());
+        styleTerminalViewButton(terminalReadingButton, terminalViewMode == TERMINAL_VIEW_CHAT);
+        styleTerminalViewButton(terminalFullButton, terminalViewMode == TERMINAL_VIEW_FULL);
+    }
+
+    private void styleTerminalViewButton(Button button, boolean selected) {
+        button.setTextColor(selected ? Color.rgb(14, 38, 24) : COLOR_TEXT_MUTED);
+        button.setBackground(selected ? rounded(COLOR_ACCENT, 7, COLOR_ACCENT, 1) : buttonBackground());
     }
 
     private HorizontalScrollView createTerminalGroupBar() {
@@ -1970,12 +1984,12 @@ public final class MainActivity extends Activity {
 
         LinearLayout bubble = new LinearLayout(this);
         bubble.setOrientation(LinearLayout.VERTICAL);
-        bubble.setPadding(dp(12), dp(9), dp(12), dp(10));
+        bubble.setPadding(user || tool ? dp(12) : dp(2), dp(9), user || tool ? dp(12) : dp(4), dp(10));
         bubble.setBackground(tool
                 ? rounded(COLOR_PANEL, 8, COLOR_BORDER, 1)
                 : user
                 ? rounded(COLOR_ACCENT_DARK, 8, COLOR_ACCENT, 1)
-                : rounded(COLOR_CARD, 8, COLOR_BORDER_SOFT, 1));
+                : rounded(Color.TRANSPARENT, 0, Color.TRANSPARENT, 0));
 
         TextView meta = new TextView(this);
         meta.setTextColor(user ? COLOR_ACCENT : tool ? COLOR_ACCENT_WARM : COLOR_TEXT_MUTED);
@@ -1983,10 +1997,10 @@ public final class MainActivity extends Activity {
         meta.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         meta.setSingleLine(true);
         meta.setEllipsize(TextUtils.TruncateAt.END);
-        meta.setText(tool
-                ? conversationToolTitle(message)
-                : (user ? "You" : "Assistant") + conversationStatusPart(message));
-        bubble.addView(meta, matchWrap());
+        meta.setText(tool ? conversationToolTitle(message) : conversationStatusPart(message).replaceFirst("^ · ", ""));
+        if (tool || (!"complete".equals(message.status) && !message.status.isEmpty())) {
+            bubble.addView(meta, matchWrap());
+        }
 
         boolean expanded = terminalExpandedMessages.contains(message.messageId);
         if (!tool || expanded) {
@@ -2009,14 +2023,14 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams bubbleParams = new LinearLayout.LayoutParams(
                 0,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
-                tool ? 1f : 0.82f
+                tool ? 1f : user ? 0.82f : 0.94f
         );
         if (!tool) {
             View spacer = new View(this);
             LinearLayout.LayoutParams spacerParams = new LinearLayout.LayoutParams(
                     0,
                     1,
-                    0.18f
+                    user ? 0.18f : 0.06f
             );
             if (user) {
                 row.addView(spacer, spacerParams);
@@ -2440,6 +2454,8 @@ public final class MainActivity extends Activity {
 
         LinearLayout tabGrid = new LinearLayout(this);
         tabGrid.setOrientation(LinearLayout.VERTICAL);
+        terminalComposerTabs = tabGrid;
+        tabGrid.setVisibility(terminalViewMode == TERMINAL_VIEW_CHAT ? View.GONE : View.VISIBLE);
         LinearLayout firstTabRow = terminalKeyRow();
         LinearLayout secondTabRow = terminalKeyRow();
         addAccessoryTab(firstTabRow, "Edit", 0);
@@ -2466,7 +2482,7 @@ public final class MainActivity extends Activity {
         inputField = new EditText(this);
         inputField.setTextColor(COLOR_TEXT);
         inputField.setHintTextColor(COLOR_TEXT_DIM);
-        inputField.setHint("type command or text");
+        inputField.setHint(terminalViewMode == TERMINAL_VIEW_CHAT ? "Message" : "type command or text");
         inputField.setSingleLine(false);
         inputField.setMinLines(3);
         inputField.setMaxLines(5);
