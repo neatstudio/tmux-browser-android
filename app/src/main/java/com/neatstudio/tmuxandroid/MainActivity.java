@@ -72,6 +72,9 @@ public final class MainActivity extends Activity {
     private static final int STATUS_BUSY = 1;
     private static final int STATUS_SUCCESS = 2;
     private static final int STATUS_ERROR = 3;
+    private static final int TERMINAL_VIEW_CHAT = 0;
+    private static final int TERMINAL_VIEW_READING = 1;
+    private static final int TERMINAL_VIEW_FULL = 2;
     private static final long TERMINAL_RENDER_INTERVAL_MS = 80L;
     private static final long[] SOCKET_RECONNECT_DELAYS_MS = {1000L, 2000L, 4000L, 8000L, 15000L};
     private static final int COLOR_APP_BG = Color.rgb(18, 20, 24);
@@ -128,6 +131,7 @@ public final class MainActivity extends Activity {
     private TextView terminalConnectionText;
     private Button terminalReadingButton;
     private ScrollView terminalScroll;
+    private LinearLayout terminalChatList;
     private EditText inputField;
     private final Button[] terminalAccessoryTabButtons = new Button[4];
     private View terminalAccessoryBar;
@@ -148,12 +152,14 @@ public final class MainActivity extends Activity {
     private TerminalScreenBuffer terminalScreen = new TerminalScreenBuffer(DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS);
     private final StringBuilder queuedTerminalInput = new StringBuilder();
     private final Set<String> terminalExpandedBlocks = new HashSet<>();
+    private final Set<String> terminalExpandedMessages = new HashSet<>();
+    private final List<ConversationMessage> terminalConversationMessages = new ArrayList<>();
     private boolean terminalConnected;
     private boolean terminalConnecting;
     private boolean terminalRenderPending;
     private boolean terminalSelectionEnabled;
     private boolean terminalFollowOutput = true;
-    private boolean terminalReadingMode = true;
+    private int terminalViewMode = TERMINAL_VIEW_CHAT;
     private int terminalKeyPage;
     private int terminalReconnectAttempt;
     private int terminalConnectionGeneration;
@@ -1606,6 +1612,8 @@ public final class MainActivity extends Activity {
         terminalFollowOutput = true;
         terminalKeyPage = 0;
         terminalExpandedBlocks.clear();
+        terminalExpandedMessages.clear();
+        terminalConversationMessages.clear();
         terminalImagePath = "";
         terminalImagePreviewBar = null;
         terminalImagePreview = null;
@@ -1631,16 +1639,17 @@ public final class MainActivity extends Activity {
         terminalText.setTextSize(11);
         terminalText.setTypeface(Typeface.MONOSPACE);
         terminalText.setIncludeFontPadding(false);
-        terminalText.setHorizontallyScrolling(!terminalReadingMode);
+        terminalText.setHorizontallyScrolling(true);
         terminalText.setLineSpacing(0, 1.05f);
-        terminalText.setGravity((terminalReadingMode ? Gravity.TOP : Gravity.BOTTOM) | Gravity.START);
+        terminalText.setGravity(Gravity.BOTTOM | Gravity.START);
         terminalText.setTextIsSelectable(terminalSelectionEnabled);
         terminalText.setPadding(dp(2), dp(8), dp(2), dp(8));
         terminalText.setBackgroundColor(COLOR_TERMINAL_BG);
-        terminalScroll.addView(terminalText, new ScrollView.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-        ));
+        terminalChatList = new LinearLayout(this);
+        terminalChatList.setOrientation(LinearLayout.VERTICAL);
+        terminalChatList.setPadding(dp(10), dp(12), dp(10), dp(18));
+        terminalChatList.addView(projectStateText("Loading conversation..."), matchWrap());
+        showTerminalView(terminalViewMode, false);
         terminalScroll.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
                 resizeTerminalToViewport(false));
         terminalScroll.setOnScrollChangeListener((view, scrollX, scrollY, oldScrollX, oldScrollY) ->
@@ -1662,6 +1671,7 @@ public final class MainActivity extends Activity {
             connectTerminal(sessionName);
             refreshTerminalGroupSessions(sessionName);
             refreshTerminalSessionMeta(sessionName);
+            refreshTerminalConversation(sessionName);
         });
         inputField.post(() -> {
             inputField.requestFocus();
@@ -1752,34 +1762,66 @@ public final class MainActivity extends Activity {
                 dp(13)
         ));
         bar.addView(titleBlock, new LinearLayout.LayoutParams(0, dp(32), 1));
-        terminalReadingButton = terminalToolButton("读", view ->
-                setTerminalReadingMode(!terminalReadingMode));
-        terminalReadingButton.setContentDescription("Toggle Chinese reading mode");
+        terminalReadingButton = terminalToolButton("聊", view -> showTerminalViewPicker());
+        terminalReadingButton.setContentDescription("Choose chat or terminal view");
         styleTerminalReadingButton();
         bar.addView(terminalReadingButton);
         bar.addView(terminalToolButton("☰", view -> showTerminalActions(sessionName)));
         return bar;
     }
 
-    private void setTerminalReadingMode(boolean reading) {
-        terminalReadingMode = reading;
-        if (terminalText != null) {
+    private void showTerminalViewPicker() {
+        String[] items = {"Chat", "Chinese reading", "Full terminal"};
+        new AlertDialog.Builder(this)
+                .setTitle("Session view")
+                .setSingleChoiceItems(items, terminalViewMode, (dialog, which) -> {
+                    showTerminalView(which, true);
+                    dialog.dismiss();
+                })
+                .show();
+    }
+
+    private void showTerminalView(int mode, boolean announce) {
+        terminalViewMode = mode;
+        if (terminalScroll == null || terminalText == null || terminalChatList == null) {
+            styleTerminalReadingButton();
+            return;
+        }
+        terminalScroll.removeAllViews();
+        if (mode == TERMINAL_VIEW_CHAT) {
+            terminalScroll.addView(terminalChatList, new ScrollView.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+            ));
+            renderTerminalConversation();
+        } else {
+            boolean reading = mode == TERMINAL_VIEW_READING;
             terminalText.setHorizontallyScrolling(!reading);
             terminalText.setGravity((reading ? Gravity.TOP : Gravity.BOTTOM) | Gravity.START);
             terminalText.setMovementMethod(reading ? LinkMovementMethod.getInstance() : null);
+            terminalScroll.addView(terminalText, new ScrollView.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+            ));
+            renderTerminalNow();
         }
         styleTerminalReadingButton();
-        renderTerminalNow();
-        setStatus(reading ? "Chinese reading mode" : "Full terminal mode");
+        if (announce) {
+            setStatus(mode == TERMINAL_VIEW_CHAT
+                    ? "Chat view"
+                    : mode == TERMINAL_VIEW_READING ? "Chinese reading mode" : "Full terminal mode");
+        }
     }
 
     private void styleTerminalReadingButton() {
         if (terminalReadingButton == null) {
             return;
         }
-        terminalReadingButton.setText(terminalReadingMode ? "读" : "终");
-        terminalReadingButton.setTextColor(terminalReadingMode ? Color.rgb(14, 38, 24) : COLOR_TEXT_MUTED);
-        terminalReadingButton.setBackground(terminalReadingMode
+        terminalReadingButton.setText(terminalViewMode == TERMINAL_VIEW_CHAT
+                ? "聊" : terminalViewMode == TERMINAL_VIEW_READING ? "读" : "终");
+        terminalReadingButton.setTextColor(terminalViewMode != TERMINAL_VIEW_FULL
+                ? Color.rgb(14, 38, 24) : COLOR_TEXT_MUTED);
+        terminalReadingButton.setBackground(terminalViewMode != TERMINAL_VIEW_FULL
                 ? rounded(COLOR_ACCENT, 7, COLOR_ACCENT, 1)
                 : buttonBackground());
     }
@@ -1846,6 +1888,185 @@ public final class MainActivity extends Activity {
                 });
             }
         });
+    }
+
+    private void refreshTerminalConversation(String sessionName) {
+        executor.execute(() -> {
+            try {
+                JSONObject rootObject = new JSONObject(api.timeline(200));
+                JSONArray events = rootObject.optJSONArray("events");
+                List<ConversationMessage> loaded = new ArrayList<>();
+                for (int index = 0; events != null && index < events.length(); index++) {
+                    JSONObject event = events.optJSONObject(index);
+                    if (event != null
+                            && "conversation-message".equals(event.optString("type"))
+                            && sessionName.equals(event.optString("sessionName"))) {
+                        loaded.add(ConversationMessage.fromJson(event));
+                    }
+                }
+                Collections.sort(loaded, (left, right) -> left.createdAt.compareTo(right.createdAt));
+                runOnUiThread(() -> {
+                    if (!sessionName.equals(activeSessionName)) {
+                        return;
+                    }
+                    terminalConversationMessages.clear();
+                    terminalConversationMessages.addAll(loaded);
+                    renderTerminalConversation();
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    if (sessionName.equals(activeSessionName) && terminalChatList != null) {
+                        terminalChatList.removeAllViews();
+                        terminalChatList.addView(projectStateText(
+                                "Conversation unavailable\n" + error.getMessage()), matchWrap());
+                    }
+                });
+            }
+        });
+    }
+
+    private void upsertConversationMessage(ConversationMessage message) {
+        if (message.sessionName.isEmpty() || !message.sessionName.equals(activeSessionName)) {
+            return;
+        }
+        if (!message.local && "user".equals(message.role)) {
+            for (int index = terminalConversationMessages.size() - 1; index >= 0; index--) {
+                ConversationMessage existing = terminalConversationMessages.get(index);
+                if (existing.local && existing.content.equals(message.content)) {
+                    terminalConversationMessages.remove(index);
+                    break;
+                }
+            }
+        }
+        for (int index = 0; index < terminalConversationMessages.size(); index++) {
+            if (terminalConversationMessages.get(index).messageId.equals(message.messageId)) {
+                terminalConversationMessages.set(index, message);
+                renderTerminalConversation();
+                return;
+            }
+        }
+        terminalConversationMessages.add(message);
+        Collections.sort(terminalConversationMessages,
+                (left, right) -> left.createdAt.compareTo(right.createdAt));
+        renderTerminalConversation();
+    }
+
+    private void renderTerminalConversation() {
+        if (terminalChatList == null) {
+            return;
+        }
+        terminalChatList.removeAllViews();
+        if (terminalConversationMessages.isEmpty()) {
+            TextView empty = bodyText("No structured messages yet");
+            empty.setGravity(Gravity.CENTER);
+            empty.setPadding(dp(12), dp(32), dp(12), dp(32));
+            terminalChatList.addView(empty, matchWrap());
+            return;
+        }
+        for (ConversationMessage message : terminalConversationMessages) {
+            terminalChatList.addView(conversationMessageRow(message));
+        }
+        if (terminalViewMode == TERMINAL_VIEW_CHAT && terminalFollowOutput && terminalScroll != null) {
+            terminalScroll.post(() -> terminalScroll.fullScroll(View.FOCUS_DOWN));
+        }
+    }
+
+    private View conversationMessageRow(ConversationMessage message) {
+        boolean user = "user".equals(message.role);
+        boolean tool = message.isTool();
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(user ? Gravity.END : Gravity.START);
+
+        LinearLayout bubble = new LinearLayout(this);
+        bubble.setOrientation(LinearLayout.VERTICAL);
+        bubble.setPadding(dp(12), dp(9), dp(12), dp(10));
+        bubble.setBackground(tool
+                ? rounded(COLOR_PANEL, 8, COLOR_BORDER, 1)
+                : user
+                ? rounded(COLOR_ACCENT_DARK, 8, COLOR_ACCENT, 1)
+                : rounded(COLOR_CARD, 8, COLOR_BORDER_SOFT, 1));
+
+        TextView meta = new TextView(this);
+        meta.setTextColor(user ? COLOR_ACCENT : tool ? COLOR_ACCENT_WARM : COLOR_TEXT_MUTED);
+        meta.setTextSize(9);
+        meta.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        meta.setSingleLine(true);
+        meta.setEllipsize(TextUtils.TruncateAt.END);
+        meta.setText(tool
+                ? conversationToolTitle(message)
+                : (user ? "You" : "Assistant") + conversationStatusPart(message));
+        bubble.addView(meta, matchWrap());
+
+        boolean expanded = terminalExpandedMessages.contains(message.messageId);
+        if (!tool || expanded) {
+            bubble.addView(conversationContent(message, tool), matchWrap());
+        } else {
+            TextView collapsed = bodyText("Tap to show " + message.content.length() + " characters");
+            collapsed.setTextSize(10);
+            collapsed.setPadding(0, dp(5), 0, 0);
+            bubble.addView(collapsed, matchWrap());
+        }
+        if (tool) {
+            bubble.setOnClickListener(view -> {
+                if (!terminalExpandedMessages.add(message.messageId)) {
+                    terminalExpandedMessages.remove(message.messageId);
+                }
+                renderTerminalConversation();
+            });
+        }
+
+        LinearLayout.LayoutParams bubbleParams = new LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                tool ? 1f : 0.82f
+        );
+        if (!tool) {
+            View spacer = new View(this);
+            LinearLayout.LayoutParams spacerParams = new LinearLayout.LayoutParams(
+                    0,
+                    1,
+                    0.18f
+            );
+            if (user) {
+                row.addView(spacer, spacerParams);
+                row.addView(bubble, bubbleParams);
+            } else {
+                row.addView(bubble, bubbleParams);
+                row.addView(spacer, spacerParams);
+            }
+        } else {
+            row.addView(bubble, bubbleParams);
+        }
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        rowParams.bottomMargin = dp(9);
+        row.setLayoutParams(rowParams);
+        return row;
+    }
+
+    private TextView conversationContent(ConversationMessage message, boolean tool) {
+        TextView content = new TextView(this);
+        content.setText(message.content.isEmpty() ? "(empty)" : message.content);
+        content.setTextColor(COLOR_TEXT);
+        content.setTextSize(tool ? 11 : 14);
+        content.setTypeface(tool ? Typeface.MONOSPACE : Typeface.DEFAULT);
+        content.setTextIsSelectable(true);
+        content.setLineSpacing(dp(2), 1f);
+        content.setPadding(0, dp(6), 0, 0);
+        return content;
+    }
+
+    private String conversationToolTitle(ConversationMessage message) {
+        String name = defaultValue(message.toolName, message.contentType);
+        return defaultValue(name, "Tool output") + conversationStatusPart(message);
+    }
+
+    private String conversationStatusPart(ConversationMessage message) {
+        String status = message.status.trim();
+        return status.isEmpty() || "complete".equals(status) ? "" : " · " + status;
     }
 
     private void updateTerminalMeta() {
@@ -3143,6 +3364,9 @@ public final class MainActivity extends Activity {
             normalized = normalized + TERMINAL_ENTER;
         }
         terminalFollowOutput = true;
+        if (activeSessionName != null) {
+            upsertConversationMessage(ConversationMessage.localUser(activeSessionName, text));
+        }
         sendTerminalInput(normalized);
         inputField.setText("");
         setStatus("Sent " + text.length() + " chars");
@@ -3310,7 +3534,7 @@ public final class MainActivity extends Activity {
         terminalRenderPending = true;
         long now = System.currentTimeMillis();
         long delay = Math.max(0L, TERMINAL_RENDER_INTERVAL_MS - (now - lastTerminalRenderMs));
-        terminalText.postDelayed(() -> {
+        mainHandler.postDelayed(() -> {
             terminalRenderPending = false;
             renderTerminalNow();
         }, delay);
@@ -3321,7 +3545,7 @@ public final class MainActivity extends Activity {
             return;
         }
         lastTerminalRenderMs = System.currentTimeMillis();
-        if (terminalReadingMode) {
+        if (terminalViewMode == TERMINAL_VIEW_READING) {
             terminalText.setMovementMethod(LinkMovementMethod.getInstance());
             terminalText.setHighlightColor(Color.TRANSPARENT);
             terminalText.setText(terminalScreen.renderFocused(terminalExpandedBlocks, key -> {
@@ -3334,7 +3558,7 @@ public final class MainActivity extends Activity {
             terminalText.setMovementMethod(null);
             terminalText.setText(terminalScreen.render());
         }
-        if (terminalFollowOutput) {
+        if (terminalViewMode != TERMINAL_VIEW_CHAT && terminalFollowOutput) {
             terminalScroll.post(() -> terminalScroll.fullScroll(View.FOCUS_DOWN));
         }
     }
@@ -3868,6 +4092,12 @@ public final class MainActivity extends Activity {
                 if (activeSessionName == null) {
                     refreshSessions();
                 }
+                return;
+            }
+            if ("conversation-message".equals(type)) {
+                upsertConversationMessage(ConversationMessage.fromJson(event));
+                terminalEventStatus = "message received";
+                updateTerminalMeta();
                 return;
             }
             if ("hook-event".equals(type)) {
