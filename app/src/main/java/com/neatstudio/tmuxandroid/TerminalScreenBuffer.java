@@ -4,12 +4,17 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
+import android.text.TextPaint;
 import android.text.style.BackgroundColorSpan;
+import android.text.style.ClickableSpan;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
+import android.view.View;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 final class TerminalScreenBuffer {
     private static final int DEFAULT_FG = 0xffe6ebf2;
@@ -29,6 +34,10 @@ final class TerminalScreenBuffer {
     private int bg = DEFAULT_BG;
     private boolean bold;
     private boolean dim;
+
+    interface FocusToggle {
+        void toggle(String key);
+    }
 
     TerminalScreenBuffer(int cols, int rows) {
         resize(cols, rows);
@@ -121,40 +130,104 @@ final class TerminalScreenBuffer {
         return output;
     }
 
-    CharSequence renderFocused() {
-        List<String> visible = new ArrayList<>();
-        int hiddenRows = 0;
+    CharSequence renderFocused(Set<String> expandedBlocks, FocusToggle toggle) {
+        SpannableStringBuilder output = new SpannableStringBuilder();
+        List<String> hiddenRows = new ArrayList<>();
+        int hiddenStart = -1;
         for (int row = 0; row < rows; row++) {
             String text = rowText(row).trim();
             if (containsHan(text)) {
-                if (hiddenRows > 0) {
-                    visible.add("... 已折叠 " + hiddenRows + " 行终端内容 ...");
-                    hiddenRows = 0;
+                if (!hiddenRows.isEmpty()) {
+                    appendFocusBlock(output, hiddenRows, hiddenStart, row - 1, expandedBlocks, toggle);
+                    hiddenRows.clear();
+                    hiddenStart = -1;
                 }
-                visible.add(text);
+                appendLine(output, text);
             } else if (!text.isEmpty()) {
-                hiddenRows++;
-            }
-        }
-        if (hiddenRows > 0) {
-            visible.add("... 已折叠 " + hiddenRows + " 行终端内容 ...");
-        }
-        if (visible.isEmpty()) {
-            for (int row = Math.max(0, rows - 4); row < rows; row++) {
-                String text = rowText(row).trim();
-                if (!text.isEmpty()) {
-                    visible.add(text);
+                if (hiddenStart < 0) {
+                    hiddenStart = row;
                 }
+                hiddenRows.add(text);
             }
         }
-        StringBuilder output = new StringBuilder();
-        for (int index = 0; index < visible.size(); index++) {
-            if (index > 0) {
-                output.append('\n');
-            }
-            output.append(visible.get(index));
+        if (!hiddenRows.isEmpty()) {
+            appendFocusBlock(output, hiddenRows, hiddenStart, rows - 1, expandedBlocks, toggle);
+        }
+        if (output.length() == 0) {
+            output.append("暂无可读内容");
         }
         return output;
+    }
+
+    private void appendFocusBlock(
+            SpannableStringBuilder output,
+            List<String> lines,
+            int startRow,
+            int endRow,
+            Set<String> expandedBlocks,
+            FocusToggle toggle
+    ) {
+        String key = startRow + ":" + endRow;
+        boolean expanded = expandedBlocks.contains(key);
+        String summary = focusSummary(lines);
+        int actionStart = output.length();
+        appendLine(output, (expanded ? "▼ " : "▶ ") + summary);
+        int actionEnd = output.length();
+        output.setSpan(new ClickableSpan() {
+            @Override
+            public void onClick(View widget) {
+                toggle.toggle(key);
+            }
+
+            @Override
+            public void updateDrawState(TextPaint paint) {
+                paint.setColor(0xff67da91);
+                paint.setUnderlineText(false);
+                paint.setFakeBoldText(true);
+            }
+        }, actionStart, actionEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        if (expanded) {
+            for (String line : lines) {
+                appendLine(output, "  " + line);
+            }
+        }
+    }
+
+    private String focusSummary(List<String> lines) {
+        String joined = String.join(" ", lines).toLowerCase(Locale.ROOT);
+        String type;
+        if (joined.contains("error") || joined.contains("failed") || joined.contains("exception")) {
+            type = "错误输出";
+        } else if (joined.contains("working") || joined.contains("running")
+                || joined.contains("waiting") || joined.contains("interrupt")) {
+            type = "运行状态";
+        } else if (joined.contains("test") || joined.contains("build") || joined.contains("compile")
+                || joined.contains("gradle") || joined.contains("webpack") || joined.contains("npm")) {
+            type = "构建/测试";
+        } else if (joined.contains("git ") || joined.contains("commit") || joined.contains("push")) {
+            type = "Git 操作";
+        } else if (lines.get(0).startsWith(">") || lines.get(0).startsWith("$")
+                || lines.get(0).startsWith("!")) {
+            type = "命令与输出";
+        } else {
+            type = "终端细节";
+        }
+        return type + " · " + lines.size() + " 行 · " + compactSummary(lines.get(0), 42);
+    }
+
+    private String compactSummary(String text, int maxChars) {
+        String compact = text.replaceAll("\\s+", " ").trim();
+        if (compact.length() <= maxChars) {
+            return compact;
+        }
+        return compact.substring(0, maxChars - 1) + "…";
+    }
+
+    private void appendLine(SpannableStringBuilder output, String text) {
+        if (output.length() > 0) {
+            output.append('\n');
+        }
+        output.append(text);
     }
 
     private int handleEscape(String text, int index) {

@@ -23,6 +23,7 @@ import android.os.Looper;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.text.InputType;
+import android.text.method.LinkMovementMethod;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
@@ -146,6 +147,7 @@ public final class MainActivity extends Activity {
     private int lastActiveSessionCount = -1;
     private TerminalScreenBuffer terminalScreen = new TerminalScreenBuffer(DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS);
     private final StringBuilder queuedTerminalInput = new StringBuilder();
+    private final Set<String> terminalExpandedBlocks = new HashSet<>();
     private boolean terminalConnected;
     private boolean terminalConnecting;
     private boolean terminalRenderPending;
@@ -1603,6 +1605,7 @@ public final class MainActivity extends Activity {
         terminalSelectionEnabled = false;
         terminalFollowOutput = true;
         terminalKeyPage = 0;
+        terminalExpandedBlocks.clear();
         terminalImagePath = "";
         terminalImagePreviewBar = null;
         terminalImagePreview = null;
@@ -1739,6 +1742,7 @@ public final class MainActivity extends Activity {
         terminalReadingMode = reading;
         if (terminalText != null) {
             terminalText.setHorizontallyScrolling(!reading);
+            terminalText.setMovementMethod(reading ? LinkMovementMethod.getInstance() : null);
         }
         styleTerminalReadingButton();
         renderTerminalNow();
@@ -3293,9 +3297,19 @@ public final class MainActivity extends Activity {
             return;
         }
         lastTerminalRenderMs = System.currentTimeMillis();
-        terminalText.setText(terminalReadingMode
-                ? terminalScreen.renderFocused()
-                : terminalScreen.render());
+        if (terminalReadingMode) {
+            terminalText.setMovementMethod(LinkMovementMethod.getInstance());
+            terminalText.setHighlightColor(Color.TRANSPARENT);
+            terminalText.setText(terminalScreen.renderFocused(terminalExpandedBlocks, key -> {
+                if (!terminalExpandedBlocks.add(key)) {
+                    terminalExpandedBlocks.remove(key);
+                }
+                renderTerminalNow();
+            }));
+        } else {
+            terminalText.setMovementMethod(null);
+            terminalText.setText(terminalScreen.render());
+        }
         if (terminalFollowOutput) {
             terminalScroll.post(() -> terminalScroll.fullScroll(View.FOCUS_DOWN));
         }
