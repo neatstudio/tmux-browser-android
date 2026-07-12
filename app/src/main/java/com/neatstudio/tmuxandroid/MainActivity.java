@@ -1720,11 +1720,34 @@ public final class MainActivity extends Activity {
         terminalMetaText.setIncludeFontPadding(false);
         updateTerminalMeta();
 
+        TextView version = new TextView(this);
+        version.setText("v" + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")");
+        version.setTextColor(COLOR_TEXT_DIM);
+        version.setTextSize(8);
+        version.setTypeface(Typeface.MONOSPACE);
+        version.setSingleLine(true);
+        version.setIncludeFontPadding(false);
+
+        LinearLayout metaRow = new LinearLayout(this);
+        metaRow.setOrientation(LinearLayout.HORIZONTAL);
+        metaRow.setGravity(Gravity.CENTER_VERTICAL);
+        metaRow.addView(terminalMetaText, new LinearLayout.LayoutParams(
+                0,
+                dp(13),
+                1
+        ));
+        LinearLayout.LayoutParams versionParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                dp(13)
+        );
+        versionParams.leftMargin = dp(6);
+        metaRow.addView(version, versionParams);
+
         titleBlock.addView(titleRow, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(17)
         ));
-        titleBlock.addView(terminalMetaText, new LinearLayout.LayoutParams(
+        titleBlock.addView(metaRow, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(13)
         ));
