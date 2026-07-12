@@ -37,9 +37,6 @@ final class TerminalScreenBuffer {
     void resize(int nextCols, int nextRows) {
         nextCols = Math.max(1, nextCols);
         nextRows = Math.max(1, nextRows);
-        Cell[][] previous = cells;
-        int previousRows = rows;
-        int previousCols = cols;
         cols = nextCols;
         rows = nextRows;
         cells = new Cell[rows][cols];
@@ -48,21 +45,11 @@ final class TerminalScreenBuffer {
                 cells[row][col] = new Cell();
             }
         }
-        if (previous != null) {
-            int copyRows = Math.min(previousRows, rows);
-            int copyCols = Math.min(previousCols, cols);
-            int previousStart = Math.max(0, previousRows - copyRows);
-            int nextStart = Math.max(0, rows - copyRows);
-            for (int row = 0; row < copyRows; row++) {
-                for (int col = 0; col < copyCols; col++) {
-                    cells[nextStart + row][col].copyFrom(previous[previousStart + row][col]);
-                }
-            }
-        }
-        cursorRow = clamp(cursorRow, 0, rows - 1);
-        cursorCol = clamp(cursorCol, 0, cols - 1);
-        savedRow = clamp(savedRow, 0, rows - 1);
-        savedCol = clamp(savedCol, 0, cols - 1);
+        cursorRow = 0;
+        cursorCol = 0;
+        savedRow = 0;
+        savedCol = 0;
+        wrapPending = false;
     }
 
     void clear() {
