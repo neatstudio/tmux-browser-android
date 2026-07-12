@@ -23,7 +23,6 @@ import android.os.Looper;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.text.InputType;
-import android.text.method.LinkMovementMethod;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
@@ -73,8 +72,7 @@ public final class MainActivity extends Activity {
     private static final int STATUS_SUCCESS = 2;
     private static final int STATUS_ERROR = 3;
     private static final int TERMINAL_VIEW_CHAT = 0;
-    private static final int TERMINAL_VIEW_READING = 1;
-    private static final int TERMINAL_VIEW_FULL = 2;
+    private static final int TERMINAL_VIEW_FULL = 1;
     private static final long TERMINAL_RENDER_INTERVAL_MS = 80L;
     private static final long[] SOCKET_RECONNECT_DELAYS_MS = {1000L, 2000L, 4000L, 8000L, 15000L};
     private static final int COLOR_APP_BG = Color.rgb(18, 20, 24);
@@ -153,7 +151,6 @@ public final class MainActivity extends Activity {
     private int lastActiveSessionCount = -1;
     private TerminalScreenBuffer terminalScreen = new TerminalScreenBuffer(DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS);
     private final StringBuilder queuedTerminalInput = new StringBuilder();
-    private final Set<String> terminalExpandedBlocks = new HashSet<>();
     private final Set<String> terminalExpandedMessages = new HashSet<>();
     private final List<ConversationMessage> terminalConversationMessages = new ArrayList<>();
     private boolean terminalConnected;
@@ -1613,7 +1610,6 @@ public final class MainActivity extends Activity {
         terminalSelectionEnabled = false;
         terminalFollowOutput = true;
         terminalKeyPage = 0;
-        terminalExpandedBlocks.clear();
         terminalExpandedMessages.clear();
         terminalConversationMessages.clear();
         terminalLiveStatusText = null;
@@ -1766,23 +1762,15 @@ public final class MainActivity extends Activity {
                 dp(13)
         ));
         bar.addView(titleBlock, new LinearLayout.LayoutParams(0, dp(32), 1));
-        terminalReadingButton = terminalToolButton("聊", view -> showTerminalViewPicker());
-        terminalReadingButton.setContentDescription("Choose chat or terminal view");
+        terminalReadingButton = terminalToolButton("聊", view -> showTerminalView(
+                terminalViewMode == TERMINAL_VIEW_CHAT ? TERMINAL_VIEW_FULL : TERMINAL_VIEW_CHAT,
+                true
+        ));
+        terminalReadingButton.setContentDescription("Toggle chat and terminal view");
         styleTerminalReadingButton();
         bar.addView(terminalReadingButton);
         bar.addView(terminalToolButton("☰", view -> showTerminalActions(sessionName)));
         return bar;
-    }
-
-    private void showTerminalViewPicker() {
-        String[] items = {"Chat", "Chinese reading", "Full terminal"};
-        new AlertDialog.Builder(this)
-                .setTitle("Session view")
-                .setSingleChoiceItems(items, terminalViewMode, (dialog, which) -> {
-                    showTerminalView(which, true);
-                    dialog.dismiss();
-                })
-                .show();
     }
 
     private void showTerminalView(int mode, boolean announce) {
@@ -1799,10 +1787,9 @@ public final class MainActivity extends Activity {
             ));
             renderTerminalConversation();
         } else {
-            boolean reading = mode == TERMINAL_VIEW_READING;
-            terminalText.setHorizontallyScrolling(!reading);
-            terminalText.setGravity((reading ? Gravity.TOP : Gravity.BOTTOM) | Gravity.START);
-            terminalText.setMovementMethod(reading ? LinkMovementMethod.getInstance() : null);
+            terminalText.setHorizontallyScrolling(true);
+            terminalText.setGravity(Gravity.BOTTOM | Gravity.START);
+            terminalText.setMovementMethod(null);
             terminalScroll.addView(terminalText, new ScrollView.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT
@@ -1811,9 +1798,7 @@ public final class MainActivity extends Activity {
         }
         styleTerminalReadingButton();
         if (announce) {
-            setStatus(mode == TERMINAL_VIEW_CHAT
-                    ? "Chat view"
-                    : mode == TERMINAL_VIEW_READING ? "Chinese reading mode" : "Full terminal mode");
+            setStatus(mode == TERMINAL_VIEW_CHAT ? "Chat view" : "Full terminal mode");
         }
     }
 
@@ -1821,11 +1806,10 @@ public final class MainActivity extends Activity {
         if (terminalReadingButton == null) {
             return;
         }
-        terminalReadingButton.setText(terminalViewMode == TERMINAL_VIEW_CHAT
-                ? "聊" : terminalViewMode == TERMINAL_VIEW_READING ? "读" : "终");
-        terminalReadingButton.setTextColor(terminalViewMode != TERMINAL_VIEW_FULL
+        terminalReadingButton.setText(terminalViewMode == TERMINAL_VIEW_CHAT ? "聊" : "终");
+        terminalReadingButton.setTextColor(terminalViewMode == TERMINAL_VIEW_CHAT
                 ? Color.rgb(14, 38, 24) : COLOR_TEXT_MUTED);
-        terminalReadingButton.setBackground(terminalViewMode != TERMINAL_VIEW_FULL
+        terminalReadingButton.setBackground(terminalViewMode == TERMINAL_VIEW_CHAT
                 ? rounded(COLOR_ACCENT, 7, COLOR_ACCENT, 1)
                 : buttonBackground());
     }
@@ -3607,19 +3591,8 @@ public final class MainActivity extends Activity {
             return;
         }
         lastTerminalRenderMs = System.currentTimeMillis();
-        if (terminalViewMode == TERMINAL_VIEW_READING) {
-            terminalText.setMovementMethod(LinkMovementMethod.getInstance());
-            terminalText.setHighlightColor(Color.TRANSPARENT);
-            terminalText.setText(terminalScreen.renderFocused(terminalExpandedBlocks, key -> {
-                if (!terminalExpandedBlocks.add(key)) {
-                    terminalExpandedBlocks.remove(key);
-                }
-                renderTerminalNow();
-            }));
-        } else {
-            terminalText.setMovementMethod(null);
-            terminalText.setText(terminalScreen.render());
-        }
+        terminalText.setMovementMethod(null);
+        terminalText.setText(terminalScreen.render());
         updateTerminalLivePanel();
         if (terminalViewMode != TERMINAL_VIEW_CHAT && terminalFollowOutput) {
             terminalScroll.post(() -> terminalScroll.fullScroll(View.FOCUS_DOWN));
