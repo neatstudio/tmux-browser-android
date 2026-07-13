@@ -3,6 +3,7 @@ package com.neatstudio.tmuxandroid;
 import android.Manifest;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -14,6 +15,7 @@ import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.net.Uri;
 import android.os.Build;
@@ -29,6 +31,7 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
+import android.view.Window;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
@@ -127,8 +130,6 @@ public final class MainActivity extends Activity {
     private TextView terminalText;
     private TextView terminalMetaText;
     private TextView terminalConnectionText;
-    private Button terminalReadingButton;
-    private Button terminalFullButton;
     private ScrollView terminalScroll;
     private LinearLayout terminalChatList;
     private TextView terminalLiveStatusText;
@@ -277,7 +278,7 @@ public final class MainActivity extends Activity {
                 view -> promptCustomServer()
         ));
         for (String url : serverUrls) {
-            content.addView(serverProfileCard(url, !isPresetServer(url)), matchWrap());
+            content.addView(serverProfileCard(url), spacedHeight(72, 0, 12));
         }
 
         content.addView(createServerUtilityRow());
@@ -290,7 +291,7 @@ public final class MainActivity extends Activity {
         setStatus("Servers");
     }
 
-    private View serverProfileCard(String url, boolean removable) {
+    private View serverProfileCard(String url) {
         String label = url.replace("http://", "").replace(":3000", "");
         boolean selected = url.equals(getServerUrl());
         LinearLayout card = new LinearLayout(this);
@@ -356,13 +357,6 @@ public final class MainActivity extends Activity {
         stateBlock.addView(active);
         stateBlock.addView(total);
         card.addView(stateBlock);
-        if (removable) {
-            Button remove = terminalToolButton("×", view -> confirmRemoveSavedServer(url));
-            remove.setContentDescription("Remove " + label);
-            remove.setTextColor(COLOR_DANGER);
-            card.addView(remove);
-        }
-
         TextView chevron = new TextView(this);
         chevron.setText("›");
         chevron.setTextColor(COLOR_TEXT_DIM);
@@ -370,12 +364,11 @@ public final class MainActivity extends Activity {
         chevron.setGravity(Gravity.CENTER);
         card.addView(chevron, new LinearLayout.LayoutParams(dp(24), dp(36)));
 
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(68)
-        );
-        params.bottomMargin = dp(10);
-        card.setLayoutParams(params);
+        Button remove = terminalToolButton("×", view -> confirmRemoveSavedServer(url));
+        remove.setContentDescription("Remove " + label);
+        remove.setTextColor(COLOR_DANGER);
+        card.addView(remove);
+
         return card;
     }
 
@@ -397,7 +390,6 @@ public final class MainActivity extends Activity {
         sessionGroupList.setOrientation(LinearLayout.VERTICAL);
         sessionGroupList.addView(projectStateText("Loading sessions and groups..."), matchWrap());
         content.addView(sessionGroupList, matchWrap());
-        content.addView(createNewGroupCard(), matchWrap());
         scroll.addView(content);
         root.addView(scroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -503,63 +495,23 @@ public final class MainActivity extends Activity {
         titleBlock.addView(title);
         row.addView(titleBlock, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
-        Button refresh = terminalToolButton("↻", view -> refreshSessions());
-        refresh.setContentDescription("Refresh sessions");
-        row.addView(refresh);
         row.addView(primaryButton("＋ Session", view -> promptCreateSession()), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 dp(38)
         ));
         header.addView(row, matchWrap());
+
+        LinearLayout utilities = new LinearLayout(this);
+        utilities.setOrientation(LinearLayout.HORIZONTAL);
+        utilities.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        Button refresh = compactButton("↻ Refresh", view -> refreshSessions());
+        refresh.setContentDescription("Refresh sessions");
+        utilities.addView(refresh);
+        Button addGroup = compactButton("＋ New group", view -> promptCreateKanbanProject());
+        addGroup.setContentDescription("Add group");
+        utilities.addView(addGroup);
+        header.addView(utilities, spacedMatchWrap(8, 0));
         return header;
-    }
-
-    private View createNewGroupCard() {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(12), dp(11), dp(12), dp(12));
-        card.setBackground(cardBackground());
-
-        TextView label = new TextView(this);
-        label.setText("NEW GROUP");
-        label.setTextColor(COLOR_TEXT_DIM);
-        label.setTextSize(9);
-        label.setTypeface(Typeface.MONOSPACE);
-        card.addView(label);
-
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(0, dp(7), 0, 0);
-        EditText input = new EditText(this);
-        input.setHint("group name");
-        input.setSingleLine(true);
-        input.setInputType(InputType.TYPE_CLASS_TEXT);
-        styleInput(input);
-        row.addView(input, new LinearLayout.LayoutParams(0, dp(40), 1));
-        Button create = compactButton("Create", view -> {
-            String name = input.getText().toString().trim();
-            if (name.isEmpty()) {
-                showMessage("Group name is empty");
-                return;
-            }
-            runApiAction("Create kanban project", () -> api.createKanbanProject(name, "~", ""));
-        });
-        LinearLayout.LayoutParams createParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                dp(40)
-        );
-        createParams.leftMargin = dp(8);
-        row.addView(create, createParams);
-        card.addView(row, matchWrap());
-
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-        );
-        params.topMargin = dp(8);
-        params.bottomMargin = dp(10);
-        card.setLayoutParams(params);
-        return card;
     }
 
     private Button primaryButton(String label, View.OnClickListener listener) {
@@ -572,6 +524,10 @@ public final class MainActivity extends Activity {
     }
 
     private String serverDisplayName(String url) {
+        String savedName = prefs.getString("server_name:" + url, "").trim();
+        if (!savedName.isEmpty()) {
+            return savedName;
+        }
         Uri parsed = Uri.parse(url);
         String host = parsed.getHost();
         if (host == null || host.isEmpty()) {
@@ -585,28 +541,71 @@ public final class MainActivity extends Activity {
     }
 
     private void promptCustomServer() {
-        EditText input = new EditText(this);
-        input.setSingleLine(true);
-        input.setHint("100.64.0.x:3000");
-        input.setText(getServerUrl());
-        input.setSelectAllOnFocus(true);
-        styleInput(input);
-        new AlertDialog.Builder(this)
-                .setTitle("Add server")
-                .setView(input)
-                .setNegativeButton("Cancel", null)
-                .setPositiveButton("Connect", (dialog, which) -> {
-                    String url = normalizeServerUrl(input.getText().toString());
-                    saveCustomServer(url);
-                    selectServer(url);
-                    openSessionPage();
-                })
-                .show();
+        Dialog dialog = new Dialog(this);
+        LinearLayout sheet = bottomSheetContent(dialog, "Add server", "Save a Tailscale host and connect now");
+        EditText name = sheetField(sheet, "NAME", "e.g. build-box", "");
+
+        LinearLayout endpointLabels = new LinearLayout(this);
+        endpointLabels.setOrientation(LinearLayout.HORIZONTAL);
+        endpointLabels.setPadding(0, dp(14), 0, dp(6));
+        TextView hostLabel = formLabel("HOST (TAILSCALE IP)");
+        endpointLabels.addView(hostLabel, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        TextView portLabel = formLabel("PORT");
+        LinearLayout.LayoutParams portLabelParams = new LinearLayout.LayoutParams(dp(82), ViewGroup.LayoutParams.WRAP_CONTENT);
+        portLabelParams.leftMargin = dp(8);
+        endpointLabels.addView(portLabel, portLabelParams);
+        sheet.addView(endpointLabels, matchWrap());
+        LinearLayout endpoint = new LinearLayout(this);
+        endpoint.setOrientation(LinearLayout.HORIZONTAL);
+        EditText host = new EditText(this);
+        host.setHint("100.64.0.x");
+        host.setSingleLine(true);
+        host.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        styleInput(host);
+        endpoint.addView(host, new LinearLayout.LayoutParams(0, dp(44), 1));
+        EditText port = new EditText(this);
+        port.setText("3000");
+        port.setSelectAllOnFocus(true);
+        port.setInputType(InputType.TYPE_CLASS_NUMBER);
+        styleInput(port);
+        LinearLayout.LayoutParams portParams = new LinearLayout.LayoutParams(dp(82), dp(44));
+        portParams.leftMargin = dp(8);
+        endpoint.addView(port, portParams);
+        sheet.addView(endpoint, matchWrap());
+
+        Button connect = primaryButton("Connect", null);
+        connect.setOnClickListener(view -> {
+            String rawHost = host.getText().toString().trim();
+            String rawPort = port.getText().toString().trim();
+            if (rawHost.isEmpty()) {
+                host.setError("Host is required");
+                return;
+            }
+            if (!rawPort.matches("[0-9]{1,5}")) {
+                port.setError("Invalid port");
+                return;
+            }
+            String url = normalizeServerUrl(rawHost + ":" + rawPort);
+            saveCustomServer(url, name.getText().toString().trim());
+            dialog.dismiss();
+            selectServer(url);
+            openSessionPage();
+        });
+        LinearLayout.LayoutParams connectParams = matchWrap();
+        connectParams.height = dp(46);
+        connectParams.topMargin = dp(18);
+        sheet.addView(connect, connectParams);
+        showBottomSheet(dialog, sheet, host);
     }
 
     private List<String> savedServerUrls() {
         List<String> urls = new ArrayList<>();
-        Collections.addAll(urls, SERVER_PROFILES);
+        Set<String> hidden = prefs.getStringSet("hidden_server_urls", Collections.emptySet());
+        for (String preset : SERVER_PROFILES) {
+            if (!hidden.contains(preset)) {
+                urls.add(preset);
+            }
+        }
         Set<String> custom = prefs.getStringSet("custom_server_urls", Collections.emptySet());
         List<String> sortedCustom = new ArrayList<>(custom);
         Collections.sort(sortedCustom);
@@ -616,7 +615,7 @@ public final class MainActivity extends Activity {
             }
         }
         String active = getServerUrl();
-        if (!urls.contains(active)) {
+        if (!urls.contains(active) && !hidden.contains(active)) {
             urls.add(0, active);
         }
         return urls;
@@ -631,15 +630,24 @@ public final class MainActivity extends Activity {
         return false;
     }
 
-    private void saveCustomServer(String url) {
-        if (isPresetServer(url)) {
-            return;
-        }
+    private void saveCustomServer(String url, String name) {
         Set<String> custom = new HashSet<>(
                 prefs.getStringSet("custom_server_urls", Collections.emptySet())
         );
-        custom.add(url);
-        prefs.edit().putStringSet("custom_server_urls", custom).apply();
+        Set<String> hidden = new HashSet<>(
+                prefs.getStringSet("hidden_server_urls", Collections.emptySet())
+        );
+        hidden.remove(url);
+        if (!isPresetServer(url)) {
+            custom.add(url);
+        }
+        SharedPreferences.Editor editor = prefs.edit()
+                .putStringSet("custom_server_urls", custom)
+                .putStringSet("hidden_server_urls", hidden);
+        if (!name.isEmpty()) {
+            editor.putString("server_name:" + url, name);
+        }
+        editor.apply();
     }
 
     private void confirmRemoveSavedServer(String url) {
@@ -651,12 +659,23 @@ public final class MainActivity extends Activity {
                     Set<String> custom = new HashSet<>(
                             prefs.getStringSet("custom_server_urls", Collections.emptySet())
                     );
+                    Set<String> hidden = new HashSet<>(
+                            prefs.getStringSet("hidden_server_urls", Collections.emptySet())
+                    );
                     custom.remove(url);
                     SharedPreferences.Editor editor = prefs.edit()
-                            .putStringSet("custom_server_urls", custom);
+                            .putStringSet("custom_server_urls", custom)
+                            .remove("server_name:" + url);
+                    if (isPresetServer(url)) {
+                        hidden.add(url);
+                        editor.putStringSet("hidden_server_urls", hidden);
+                    }
                     if (url.equals(getServerUrl())) {
-                        editor.putString("server_url", DEFAULT_TAILSCALE_URL);
-                        api = new SessionApiClient(DEFAULT_TAILSCALE_URL);
+                        List<String> remaining = savedServerUrls();
+                        remaining.remove(url);
+                        String fallback = remaining.isEmpty() ? BuildConfig.DEFAULT_SERVER_URL : remaining.get(0);
+                        editor.putString("server_url", fallback);
+                        api = new SessionApiClient(fallback);
                         connectAppEvents();
                     }
                     editor.apply();
@@ -1243,7 +1262,7 @@ public final class MainActivity extends Activity {
                         project.optString("name", "Project"),
                         groupSessions,
                         true
-                ), matchWrap());
+                ), spacedMatchWrap(4, 16));
             }
         } catch (Exception ignored) {
         }
@@ -1254,7 +1273,10 @@ public final class MainActivity extends Activity {
                 ungrouped.add(session);
             }
         }
-        sessionGroupList.addView(sessionGroupSection("Ungrouped", ungrouped, false), matchWrap());
+        sessionGroupList.addView(
+                sessionGroupSection("Ungrouped", ungrouped, false),
+                spacedMatchWrap(4, 16)
+        );
         setStatus("Loaded " + sessions.size() + " sessions");
     }
 
@@ -1303,16 +1325,10 @@ public final class MainActivity extends Activity {
             section.addView(empty, matchWrap());
         } else {
             for (SessionSummary session : sessions) {
-                section.addView(sessionRow(session), matchWrap());
+                section.addView(sessionRow(session), spacedMatchWrap(0, 10));
             }
         }
 
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-        );
-        params.bottomMargin = dp(7);
-        section.setLayoutParams(params);
         return section;
     }
 
@@ -1357,7 +1373,7 @@ public final class MainActivity extends Activity {
                 return;
             }
             for (int index = 0; index < projects.length(); index++) {
-                projectList.addView(projectCard(projects.getJSONObject(index)), matchWrap());
+                projectList.addView(projectCard(projects.getJSONObject(index)));
             }
         } catch (Exception error) {
             projectList.addView(projectStateText(text == null || text.isEmpty() ? "(empty)" : text), matchWrap());
@@ -1463,7 +1479,7 @@ public final class MainActivity extends Activity {
             list.addView(empty);
         }
         for (SessionSummary session : sessions) {
-            list.addView(sessionRow(session), matchWrap());
+            list.addView(sessionRow(session), spacedMatchWrap(0, 10));
         }
         if (sessionSummaryText != null) {
             sessionSummaryText.setText("Server: " + getServerUrl() + "\nSessions: " + sessions.size());
@@ -1542,43 +1558,110 @@ public final class MainActivity extends Activity {
         kill.setTextColor(COLOR_DANGER);
         row.addView(kill);
 
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-        );
-        params.bottomMargin = dp(7);
-        row.setLayoutParams(params);
         return row;
     }
 
     private void promptCreateSession() {
-        EditText input = new EditText(this);
-        input.setSingleLine(true);
-        input.setHint("session-name");
-        input.setInputType(InputType.TYPE_CLASS_TEXT);
-        new AlertDialog.Builder(this)
-                .setTitle("Create tmux session")
-                .setView(input)
-                .setNegativeButton("Cancel", null)
-                .setPositiveButton("Create", (dialog, which) -> {
-                    String name = input.getText().toString().trim();
-                    if (!name.matches("[A-Za-z0-9._-]+")) {
-                        showMessage("Invalid session name");
-                        return;
+        progressBar.setVisibility(View.VISIBLE);
+        executor.execute(() -> {
+            List<String> groups = new ArrayList<>();
+            try {
+                JSONObject object = new JSONObject(api.kanbanProjects());
+                JSONArray projects = object.optJSONArray("projects");
+                for (int index = 0; projects != null && index < projects.length(); index++) {
+                    JSONObject project = projects.optJSONObject(index);
+                    if (project != null && !project.optString("name").isEmpty()) {
+                        groups.add(project.optString("name"));
                     }
-                    executor.execute(() -> {
-                        try {
-                            api.createSession(name);
-                            runOnUiThread(() -> {
-                                showMessage("Created " + name);
-                                refreshSessions();
-                            });
-                        } catch (Exception error) {
-                            runOnUiThread(() -> showMessage("Create failed: " + error.getMessage()));
-                        }
+                }
+            } catch (Exception ignored) {
+            }
+            runOnUiThread(() -> {
+                progressBar.setVisibility(View.GONE);
+                showCreateSessionDialog(groups);
+            });
+        });
+    }
+
+    private void showCreateSessionDialog(List<String> groups) {
+        Dialog dialog = new Dialog(this);
+        LinearLayout sheet = bottomSheetContent(
+                dialog,
+                "New session",
+                "Create a tmux session and optionally place it in a group"
+        );
+        EditText input = sheetField(sheet, "NAME", "session-name", "");
+
+        TextView groupLabel = formLabel("GROUP");
+        groupLabel.setPadding(0, dp(14), 0, dp(6));
+        sheet.addView(groupLabel, matchWrap());
+        HorizontalScrollView groupScroller = new HorizontalScrollView(this);
+        groupScroller.setHorizontalScrollBarEnabled(false);
+        LinearLayout groupRow = new LinearLayout(this);
+        groupRow.setOrientation(LinearLayout.HORIZONTAL);
+        List<Button> groupButtons = new ArrayList<>();
+        List<String> choices = new ArrayList<>();
+        choices.add("");
+        choices.addAll(groups);
+        String[] selectedGroup = {""};
+        for (String group : choices) {
+            String label = group.isEmpty() ? "Ungrouped" : group;
+            Button choice = compactButton(label, null);
+            choice.setOnClickListener(view -> {
+                selectedGroup[0] = group;
+                for (int index = 0; index < groupButtons.size(); index++) {
+                    boolean selected = choices.get(index).equals(group);
+                    groupButtons.get(index).setTextColor(selected ? COLOR_ACCENT : COLOR_TEXT_MUTED);
+                    groupButtons.get(index).setBackground(selected
+                            ? rounded(COLOR_ACCENT_DARK, 8, COLOR_ACCENT, 1)
+                            : buttonBackground());
+                }
+            });
+            groupButtons.add(choice);
+            groupRow.addView(choice);
+        }
+        groupButtons.get(0).performClick();
+        groupScroller.addView(groupRow, new HorizontalScrollView.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                dp(40)
+        ));
+        sheet.addView(groupScroller, matchWrap());
+
+        Button create = primaryButton("Create session", null);
+        create.setOnClickListener(view -> {
+            String name = input.getText().toString().trim();
+            if (!name.matches("[A-Za-z0-9._-]+")) {
+                input.setError("Use letters, numbers, dot, dash, or underscore");
+                return;
+            }
+            create.setEnabled(false);
+            executor.execute(() -> {
+                try {
+                    api.createSession(name);
+                    if (!selectedGroup[0].isEmpty()) {
+                        api.addKanbanSession(selectedGroup[0], name);
+                    }
+                    runOnUiThread(() -> {
+                        dialog.dismiss();
+                        showMessage("Created " + name);
+                        refreshSessions();
                     });
-                })
-                .show();
+                } catch (Exception error) {
+                    runOnUiThread(() -> {
+                        create.setEnabled(true);
+                        showMessage("Create failed: " + error.getMessage());
+                    });
+                }
+            });
+        });
+        LinearLayout.LayoutParams createParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(46)
+        );
+        createParams.topMargin = dp(16);
+        sheet.addView(create, createParams);
+
+        showBottomSheet(dialog, sheet, input);
     }
 
     private void confirmKill(String sessionName) {
@@ -1603,6 +1686,7 @@ public final class MainActivity extends Activity {
     private void openTerminal(String sessionName) {
         closeTerminalSocket();
         activeSessionName = sessionName;
+        terminalViewMode = TERMINAL_VIEW_CHAT;
         projectList = null;
         sessionGroupList = null;
         terminalScreen = new TerminalScreenBuffer(DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS);
@@ -1765,13 +1849,6 @@ public final class MainActivity extends Activity {
                 dp(13)
         ));
         bar.addView(titleBlock, new LinearLayout.LayoutParams(0, dp(32), 1));
-        terminalReadingButton = terminalToolButton("聊", view -> showTerminalView(TERMINAL_VIEW_CHAT, true));
-        terminalReadingButton.setContentDescription("Chat view");
-        terminalFullButton = terminalToolButton("终", view -> showTerminalView(TERMINAL_VIEW_FULL, true));
-        terminalFullButton.setContentDescription("Full terminal view");
-        styleTerminalReadingButton();
-        bar.addView(terminalReadingButton);
-        bar.addView(terminalFullButton);
         bar.addView(terminalToolButton("☰", view -> showTerminalActions(sessionName)));
         return bar;
     }
@@ -1779,7 +1856,6 @@ public final class MainActivity extends Activity {
     private void showTerminalView(int mode, boolean announce) {
         terminalViewMode = mode;
         if (terminalScroll == null || terminalText == null || terminalChatList == null) {
-            styleTerminalReadingButton();
             return;
         }
         terminalScroll.removeAllViews();
@@ -1799,7 +1875,6 @@ public final class MainActivity extends Activity {
             ));
             renderTerminalNow();
         }
-        styleTerminalReadingButton();
         boolean chat = mode == TERMINAL_VIEW_CHAT;
         if (terminalAccessoryBar != null) {
             terminalAccessoryBar.setVisibility(chat ? View.GONE : View.VISIBLE);
@@ -1813,19 +1888,6 @@ public final class MainActivity extends Activity {
         if (announce) {
             setStatus(mode == TERMINAL_VIEW_CHAT ? "Chat view" : "Full terminal mode");
         }
-    }
-
-    private void styleTerminalReadingButton() {
-        if (terminalReadingButton == null || terminalFullButton == null) {
-            return;
-        }
-        styleTerminalViewButton(terminalReadingButton, terminalViewMode == TERMINAL_VIEW_CHAT);
-        styleTerminalViewButton(terminalFullButton, terminalViewMode == TERMINAL_VIEW_FULL);
-    }
-
-    private void styleTerminalViewButton(Button button, boolean selected) {
-        button.setTextColor(selected ? Color.rgb(14, 38, 24) : COLOR_TEXT_MUTED);
-        button.setBackground(selected ? rounded(COLOR_ACCENT, 7, COLOR_ACCENT, 1) : buttonBackground());
     }
 
     private HorizontalScrollView createTerminalGroupBar() {
@@ -1964,8 +2026,19 @@ public final class MainActivity extends Activity {
             empty.setPadding(dp(12), dp(24), dp(12), dp(24));
             terminalChatList.addView(empty, matchWrap());
         } else {
-            for (ConversationMessage message : terminalConversationMessages) {
-                terminalChatList.addView(conversationMessageRow(message));
+            for (int index = 0; index < terminalConversationMessages.size();) {
+                ConversationMessage message = terminalConversationMessages.get(index);
+                if (!message.isTool()) {
+                    terminalChatList.addView(conversationMessageRow(message));
+                    index++;
+                    continue;
+                }
+                List<ConversationMessage> tools = new ArrayList<>();
+                while (index < terminalConversationMessages.size()
+                        && terminalConversationMessages.get(index).isTool()) {
+                    tools.add(terminalConversationMessages.get(index++));
+                }
+                terminalChatList.addView(conversationToolGroup(tools));
             }
         }
         terminalChatList.addView(conversationLiveTerminalPanel(), matchWrap());
@@ -2020,27 +2093,24 @@ public final class MainActivity extends Activity {
             });
         }
 
-        LinearLayout.LayoutParams bubbleParams = new LinearLayout.LayoutParams(
-                0,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                tool ? 1f : user ? 0.82f : 0.94f
-        );
-        if (!tool) {
+        if (!tool && !user) {
+            row.addView(bubble, matchWrap());
+        } else if (!tool) {
+            LinearLayout.LayoutParams bubbleParams = new LinearLayout.LayoutParams(
+                    0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    0.82f
+            );
             View spacer = new View(this);
             LinearLayout.LayoutParams spacerParams = new LinearLayout.LayoutParams(
                     0,
                     1,
-                    user ? 0.18f : 0.06f
+                    0.18f
             );
-            if (user) {
-                row.addView(spacer, spacerParams);
-                row.addView(bubble, bubbleParams);
-            } else {
-                row.addView(bubble, bubbleParams);
-                row.addView(spacer, spacerParams);
-            }
-        } else {
+            row.addView(spacer, spacerParams);
             row.addView(bubble, bubbleParams);
+        } else {
+            row.addView(bubble, matchWrap());
         }
         LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -2049,6 +2119,64 @@ public final class MainActivity extends Activity {
         rowParams.bottomMargin = dp(9);
         row.setLayoutParams(rowParams);
         return row;
+    }
+
+    private View conversationToolGroup(List<ConversationMessage> tools) {
+        LinearLayout group = new LinearLayout(this);
+        group.setOrientation(LinearLayout.VERTICAL);
+
+        HorizontalScrollView scroller = new HorizontalScrollView(this);
+        scroller.setHorizontalScrollBarEnabled(false);
+        LinearLayout chips = new LinearLayout(this);
+        chips.setOrientation(LinearLayout.HORIZONTAL);
+        chips.setGravity(Gravity.CENTER_VERTICAL);
+        for (ConversationMessage message : tools) {
+            String label = compactLabel(conversationToolTitle(message), 18);
+            Button chip = compactButton(label, view -> {
+                if (!terminalExpandedMessages.add(message.messageId)) {
+                    terminalExpandedMessages.remove(message.messageId);
+                }
+                renderTerminalConversation();
+            });
+            chip.setTextSize(9);
+            chip.setContentDescription("Toggle " + label);
+            chips.addView(chip);
+        }
+        scroller.addView(chips, new HorizontalScrollView.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                dp(34)
+        ));
+        group.addView(scroller, matchWrap());
+
+        for (ConversationMessage message : tools) {
+            if (!terminalExpandedMessages.contains(message.messageId)) {
+                continue;
+            }
+            LinearLayout detail = new LinearLayout(this);
+            detail.setOrientation(LinearLayout.VERTICAL);
+            detail.setPadding(dp(10), dp(7), dp(10), dp(9));
+            detail.setBackground(rounded(COLOR_FIELD, 7, COLOR_BORDER_SOFT, 1));
+            TextView title = bodyText(conversationToolTitle(message));
+            title.setTextColor(COLOR_ACCENT_WARM);
+            title.setTextSize(9);
+            title.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+            detail.addView(title, matchWrap());
+            detail.addView(conversationContent(message, true), matchWrap());
+            LinearLayout.LayoutParams detailParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+            );
+            detailParams.topMargin = dp(5);
+            group.addView(detail, detailParams);
+        }
+
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        );
+        params.bottomMargin = dp(8);
+        group.setLayoutParams(params);
+        return group;
     }
 
     private TextView conversationContent(ConversationMessage message, boolean tool) {
@@ -2360,6 +2488,7 @@ public final class MainActivity extends Activity {
 
     private void showTerminalActions(String sessionName) {
         String[] items = {
+                terminalViewMode == TERMINAL_VIEW_CHAT ? "Open raw terminal" : "Open content view",
                 "Reconnect",
                 "Clear local view and tmux history",
                 "Split horizontal",
@@ -2380,53 +2509,57 @@ public final class MainActivity extends Activity {
                 .setItems(items, (dialog, which) -> {
                     switch (which) {
                         case 0:
-                            connectTerminal(sessionName);
+                            showTerminalView(terminalViewMode == TERMINAL_VIEW_CHAT
+                                    ? TERMINAL_VIEW_FULL : TERMINAL_VIEW_CHAT, true);
                             break;
                         case 1:
+                            connectTerminal(sessionName);
+                            break;
+                        case 2:
                             terminalScreen.clear();
                             terminalText.setText("");
                             if (terminalSocket != null) {
                                 terminalSocket.clearHistory();
                             }
                             break;
-                        case 2:
+                        case 3:
                             runApiAction("Split horizontal", () -> api.splitPane(sessionName, "horizontal"));
                             break;
-                        case 3:
+                        case 4:
                             runApiAction("Split vertical", () -> api.splitPane(sessionName, "vertical"));
                             break;
-                        case 4:
+                        case 5:
                             sendTerminalInput("\u0002z");
                             break;
-                        case 5:
+                        case 6:
                             if (terminalSocket != null) {
                                 terminalSocket.scroll(-terminalRows);
                             }
                             break;
-                        case 6:
+                        case 7:
                             if (terminalSocket != null) {
                                 terminalSocket.scroll(terminalRows);
                             }
                             break;
-                        case 7:
+                        case 8:
                             showRaw("Session status", () -> api.sessionStatus(sessionName));
                             break;
-                        case 8:
+                        case 9:
                             promptSendCommand(sessionName);
                             break;
-                        case 9:
+                        case 10:
                             sendTerminalInput("\u0002");
                             break;
-                        case 10:
+                        case 11:
                             sendTerminalInput("\u0002d");
                             break;
-                        case 11:
+                        case 12:
                             sendTerminalInput("\u0002c");
                             break;
-                        case 12:
+                        case 13:
                             sendTerminalInput("\u0002n");
                             break;
-                        case 13:
+                        case 14:
                             sendTerminalInput("\u0002p");
                             break;
                         default:
@@ -2644,22 +2777,34 @@ public final class MainActivity extends Activity {
     }
 
     private void promptCreateKanbanProject() {
-        LinearLayout form = formRoot();
-        EditText name = formField(form, "Project name", "project");
-        EditText path = formField(form, "Path", "~");
-        EditText server = formField(form, "SSH server optional", "");
-        new AlertDialog.Builder(this)
-                .setTitle("Create kanban project")
-                .setView(form)
-                .setNegativeButton("Cancel", null)
-                .setPositiveButton("Create", (dialog, which) -> runApiAction("Create kanban project", () ->
-                        api.createKanbanProject(
-                                name.getText().toString().trim(),
-                                defaultValue(path.getText().toString().trim(), "~"),
-                                server.getText().toString().trim()
-                        )
-                ))
-                .show();
+        Dialog dialog = new Dialog(this);
+        LinearLayout sheet = bottomSheetContent(
+                dialog,
+                "New group",
+                "Organize related tmux sessions under one project"
+        );
+        EditText name = sheetField(sheet, "NAME", "group name", "");
+        EditText path = sheetField(sheet, "WORKING PATH", "~", "~");
+        EditText server = sheetField(sheet, "SSH SERVER (OPTIONAL)", "user@host", "");
+        Button create = primaryButton("Create group", null);
+        create.setOnClickListener(view -> {
+            String groupName = name.getText().toString().trim();
+            if (groupName.isEmpty()) {
+                name.setError("Group name is required");
+                return;
+            }
+            dialog.dismiss();
+            runApiAction("Create group", () -> api.createKanbanProject(
+                    groupName,
+                    defaultValue(path.getText().toString().trim(), "~"),
+                    server.getText().toString().trim()
+            ));
+        });
+        LinearLayout.LayoutParams createParams = matchWrap();
+        createParams.height = dp(46);
+        createParams.topMargin = dp(18);
+        sheet.addView(create, createParams);
+        showBottomSheet(dialog, sheet, name);
     }
 
     private void promptDeleteKanbanProject() {
@@ -2969,7 +3114,7 @@ public final class MainActivity extends Activity {
         setStatus("Probing Tailscale APIs...");
         executor.execute(() -> {
             StringBuilder text = new StringBuilder();
-            for (String url : SERVER_PROFILES) {
+            for (String url : savedServerUrls()) {
                 text.append(url).append('\n');
                 try {
                     SessionApiClient client = new SessionApiClient(url);
@@ -3181,6 +3326,81 @@ public final class MainActivity extends Activity {
         form.setOrientation(LinearLayout.VERTICAL);
         form.setPadding(dp(18), dp(8), dp(18), 0);
         return form;
+    }
+
+    private TextView formLabel(String text) {
+        TextView label = new TextView(this);
+        label.setText(text);
+        label.setTextColor(COLOR_TEXT_DIM);
+        label.setTextSize(9);
+        label.setTypeface(Typeface.MONOSPACE);
+        return label;
+    }
+
+    private LinearLayout bottomSheetContent(Dialog dialog, String titleText, String subtitleText) {
+        LinearLayout sheet = new LinearLayout(this);
+        sheet.setOrientation(LinearLayout.VERTICAL);
+        sheet.setPadding(dp(18), dp(14), dp(18), dp(24));
+        sheet.setBackground(rounded(COLOR_CARD, 8, COLOR_BORDER, 1));
+
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout titleBlock = new LinearLayout(this);
+        titleBlock.setOrientation(LinearLayout.VERTICAL);
+        TextView title = new TextView(this);
+        title.setText(titleText);
+        title.setTextColor(COLOR_TEXT);
+        title.setTextSize(16);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        TextView subtitle = bodyText(subtitleText);
+        subtitle.setTextSize(10);
+        subtitle.setPadding(0, dp(3), dp(8), 0);
+        titleBlock.addView(title, matchWrap());
+        titleBlock.addView(subtitle, matchWrap());
+        header.addView(titleBlock, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        Button close = terminalToolButton("×", view -> dialog.dismiss());
+        close.setContentDescription("Close " + titleText);
+        header.addView(close);
+        sheet.addView(header, spacedMatchWrap(0, 10));
+        return sheet;
+    }
+
+    private EditText sheetField(LinearLayout sheet, String labelText, String hint, String value) {
+        TextView label = formLabel(labelText);
+        label.setPadding(0, dp(10), 0, dp(6));
+        sheet.addView(label, matchWrap());
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setHint(hint);
+        input.setText(value);
+        input.setSelectAllOnFocus(!value.isEmpty());
+        input.setInputType(InputType.TYPE_CLASS_TEXT);
+        styleInput(input);
+        sheet.addView(input, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(44)
+        ));
+        return input;
+    }
+
+    private void showBottomSheet(Dialog dialog, LinearLayout sheet, EditText focus) {
+        dialog.setContentView(sheet);
+        dialog.setCanceledOnTouchOutside(true);
+        dialog.show();
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            WindowManager.LayoutParams attributes = window.getAttributes();
+            attributes.gravity = Gravity.BOTTOM;
+            attributes.dimAmount = 0.65f;
+            window.setAttributes(attributes);
+            window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+        }
+        if (focus != null) {
+            focus.requestFocus();
+        }
     }
 
     private EditText formField(LinearLayout form, String label, String value) {
@@ -3911,6 +4131,23 @@ public final class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         );
+    }
+
+    private LinearLayout.LayoutParams spacedMatchWrap(int topDp, int bottomDp) {
+        LinearLayout.LayoutParams params = matchWrap();
+        params.topMargin = dp(topDp);
+        params.bottomMargin = dp(bottomDp);
+        return params;
+    }
+
+    private LinearLayout.LayoutParams spacedHeight(int heightDp, int topDp, int bottomDp) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(heightDp)
+        );
+        params.topMargin = dp(topDp);
+        params.bottomMargin = dp(bottomDp);
+        return params;
     }
 
     private void showMessage(String message) {
