@@ -29,6 +29,7 @@ import android.text.method.LinkMovementMethod;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowInsets;
@@ -166,6 +167,8 @@ public final class MainActivity extends Activity {
     private int terminalViewMode = TERMINAL_VIEW_CHAT;
     private int terminalKeyPage;
     private int terminalHistoryOffset;
+    private float terminalTouchStartY;
+    private int terminalTouchStartScrollY;
     private int terminalReconnectAttempt;
     private int terminalConnectionGeneration;
     private int eventReconnectAttempt;
@@ -1745,6 +1748,8 @@ public final class MainActivity extends Activity {
                 resizeTerminalToViewport(false));
         terminalScroll.setOnScrollChangeListener((view, scrollX, scrollY, oldScrollX, oldScrollY) ->
                 terminalFollowOutput = !view.canScrollVertically(1));
+        terminalScroll.setOverScrollMode(View.OVER_SCROLL_ALWAYS);
+        terminalScroll.setOnTouchListener(this::handleTerminalScrollTouch);
         root.addView(terminalScroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
@@ -2191,7 +2196,7 @@ public final class MainActivity extends Activity {
         terminalLiveOutputText.setTextSize(11);
         terminalLiveOutputText.setTypeface(Typeface.MONOSPACE);
         terminalLiveOutputText.setIncludeFontPadding(false);
-        terminalLiveOutputText.setHorizontallyScrolling(true);
+        terminalLiveOutputText.setHorizontallyScrolling(false);
         terminalLiveOutputText.setLineSpacing(0, 1.05f);
         terminalLiveOutputText.setGravity(Gravity.BOTTOM | Gravity.START);
         terminalLiveOutputText.setBackgroundColor(COLOR_TERMINAL_BG);
@@ -3790,6 +3795,31 @@ public final class MainActivity extends Activity {
         setStatus(terminalHistoryOffset == 0
                 ? "Live terminal output"
                 : "Terminal history · " + terminalHistoryOffset + " lines back");
+    }
+
+    private boolean handleTerminalScrollTouch(View view, MotionEvent event) {
+        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            terminalTouchStartY = event.getY();
+            terminalTouchStartScrollY = terminalScroll == null ? 0 : terminalScroll.getScrollY();
+            return false;
+        }
+        if (event.getActionMasked() != MotionEvent.ACTION_UP || terminalScroll == null) {
+            return false;
+        }
+        float distance = event.getY() - terminalTouchStartY;
+        if (Math.abs(distance) < dp(48)) {
+            return false;
+        }
+        int movedLocally = Math.abs(terminalScroll.getScrollY() - terminalTouchStartScrollY);
+        int lineHeight = terminalLiveOutputText == null ? dp(16) : terminalLiveOutputText.getLineHeight();
+        int lines = clamp(Math.round(Math.abs(distance) / Math.max(1, lineHeight)), 4, terminalRows);
+        if (distance > 0 && !terminalScroll.canScrollVertically(-1) && movedLocally <= dp(24)) {
+            terminalScroll.post(() -> scrollTerminalHistory(-lines));
+        } else if (distance < 0 && terminalHistoryOffset > 0
+                && !terminalScroll.canScrollVertically(1) && movedLocally <= dp(24)) {
+            terminalScroll.post(() -> scrollTerminalHistory(lines));
+        }
+        return false;
     }
 
     private void setTerminalKeyPage(int page) {
