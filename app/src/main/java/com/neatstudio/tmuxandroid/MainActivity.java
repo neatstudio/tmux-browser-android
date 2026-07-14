@@ -44,6 +44,7 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -56,7 +57,9 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
@@ -107,6 +110,10 @@ public final class MainActivity extends Activity {
     private static final String PAGE_UPDATE = "Update";
     private static final String PAGE_ABOUT = "About";
     private static final String TERMINAL_ENTER = "\r";
+    private static final String SERVER_INSTALL_COMMANDS = "chmod +x tmux-ui.run\n"
+            + "./tmux-ui.run install\n"
+            + "./tmux-ui.run service-install\n"
+            + "./tmux-ui.run service-status";
     private static final String[] SERVER_PROFILES = {
             "http://100.89.0.116:3000",
             "http://100.89.0.2:3000",
@@ -116,6 +123,7 @@ public final class MainActivity extends Activity {
     };
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final ExecutorService serverProbeExecutor = Executors.newFixedThreadPool(5);
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private SharedPreferences prefs;
     private UpdateManager updateManager;
@@ -154,6 +162,9 @@ public final class MainActivity extends Activity {
     private String pendingImageUploadSession;
     private int lastSessionCount = -1;
     private int lastActiveSessionCount = -1;
+    private final Map<String, Integer> serverSessionCounts = new HashMap<>();
+    private final Map<String, Integer> serverActiveSessionCounts = new HashMap<>();
+    private final Set<String> serverCountFailures = new HashSet<>();
     private TerminalScreenBuffer terminalScreen = new TerminalScreenBuffer(DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS);
     private final StringBuilder queuedTerminalInput = new StringBuilder();
     private final Set<String> terminalExpandedBlocks = new HashSet<>();
@@ -167,6 +178,10 @@ public final class MainActivity extends Activity {
     private int terminalViewMode = TERMINAL_VIEW_CHAT;
     private int terminalKeyPage;
     private int terminalHistoryOffset;
+    private float terminalFontSizeSp = 11f;
+    private float terminalLineHeight = 1.05f;
+    private String terminalFontFamily = "monospace";
+    private String terminalThemeId = "dark";
     private float terminalTouchStartY;
     private int terminalTouchStartScrollY;
     private int terminalReconnectAttempt;
@@ -295,6 +310,7 @@ public final class MainActivity extends Activity {
                 1
         ));
         setStatus("Servers");
+        refreshServerSummaries(serverUrls);
     }
 
     private View serverProfileCard(String url) {
@@ -351,15 +367,21 @@ public final class MainActivity extends Activity {
         stateBlock.setOrientation(LinearLayout.VERTICAL);
         stateBlock.setGravity(Gravity.END);
         TextView active = new TextView(this);
-        active.setText(selected && lastActiveSessionCount >= 0 ? String.valueOf(lastActiveSessionCount) : "0");
+        Integer activeCount = serverActiveSessionCounts.get(url);
+        Integer totalCount = serverSessionCounts.get(url);
+        active.setText(activeCount == null ? "…" : String.valueOf(activeCount));
         active.setTextColor(COLOR_ACCENT);
         active.setTextSize(13);
         active.setTypeface(Typeface.MONOSPACE);
+        active.setTag("server-active:" + url);
         TextView total = new TextView(this);
-        total.setText("of " + (selected && lastSessionCount >= 0 ? lastSessionCount : 0));
+        total.setText(totalCount == null
+                ? (serverCountFailures.contains(url) ? "offline" : "sessions")
+                : "of " + totalCount);
         total.setTextColor(COLOR_TEXT_DIM);
         total.setTextSize(9);
         total.setTypeface(Typeface.MONOSPACE);
+        total.setTag("server-total:" + url);
         stateBlock.addView(active);
         stateBlock.addView(total);
         card.addView(stateBlock);
@@ -376,6 +398,51 @@ public final class MainActivity extends Activity {
         card.addView(remove);
 
         return card;
+    }
+
+    private void refreshServerSummaries(List<String> urls) {
+        for (String url : urls) {
+            serverProbeExecutor.execute(() -> {
+                try {
+                    List<SessionSummary> sessions = new SessionApiClient(url).getSessions();
+                    int activeCount = 0;
+                    for (SessionSummary session : sessions) {
+                        String status = defaultValue(session.status, "").toLowerCase(java.util.Locale.ROOT);
+                        if (status.contains("attach") || status.contains("active")) {
+                            activeCount++;
+                        }
+                    }
+                    int finalActiveCount = activeCount;
+                    runOnUiThread(() -> updateServerSummary(url, sessions.size(), finalActiveCount, false));
+                } catch (Exception error) {
+                    runOnUiThread(() -> updateServerSummary(url, 0, 0, true));
+                }
+            });
+        }
+    }
+
+    private void updateServerSummary(String url, int totalCount, int activeCount, boolean failed) {
+        if (failed) {
+            serverSessionCounts.remove(url);
+            serverActiveSessionCounts.remove(url);
+            serverCountFailures.add(url);
+        } else {
+            serverSessionCounts.put(url, totalCount);
+            serverActiveSessionCounts.put(url, activeCount);
+            serverCountFailures.remove(url);
+        }
+        if (!PAGE_SERVERS.equals(activeMainPage)) {
+            return;
+        }
+        TextView active = root.findViewWithTag("server-active:" + url);
+        TextView total = root.findViewWithTag("server-total:" + url);
+        if (active != null) {
+            active.setText(failed ? "–" : String.valueOf(activeCount));
+            active.setTextColor(failed ? COLOR_TEXT_DIM : COLOR_ACCENT);
+        }
+        if (total != null) {
+            total.setText(failed ? "offline" : "of " + totalCount);
+        }
     }
 
     private void renderSessionScreen() {
@@ -510,6 +577,9 @@ public final class MainActivity extends Activity {
         LinearLayout utilities = new LinearLayout(this);
         utilities.setOrientation(LinearLayout.HORIZONTAL);
         utilities.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        Button display = terminalToolButton("⚙", view -> promptSessionSettings(""));
+        display.setContentDescription("Session display settings");
+        utilities.addView(display);
         Button refresh = compactButton("↻ Refresh", view -> refreshSessions());
         refresh.setContentDescription("Refresh sessions");
         utilities.addView(refresh);
@@ -846,24 +916,26 @@ public final class MainActivity extends Activity {
 
         ScrollView scroll = new ScrollView(this);
         LinearLayout content = pageContent();
-        content.addView(infoBlock(
-                "Installed",
-                appIdentityText() + "\n"
-                        + "Update source: " + updateSourceHost() + "\n"
-                        + prefs.getString("update_url", BuildConfig.DEFAULT_UPDATE_URL)
+        content.addView(createPageHeader(
+                "release channel",
+                "Updates",
+                "Check",
+                view -> updateManager.checkSelected(true)
         ));
-        content.addView(sectionTitle("Update"));
+        content.addView(updateSummaryPanel());
+        content.addView(sectionTitle("Release source"));
         content.addView(actionPanel(
-                actionButton("Auto check", view -> updateManager.check(true)),
                 actionButton("Gitea", view -> updateManager.checkGitea(true)),
                 actionButton("GitHub", view -> updateManager.checkGithub(true)),
                 actionButton("Preview", view -> updateManager.checkPreview(true)),
                 actionButton("Selected", view -> updateManager.checkSelected(true)),
-                actionButton("Source", view -> showUpdateSourcePicker()),
-                actionButton("APK", view -> updateManager.openApkDownload())
+                actionButton("Choose source", view -> showUpdateSourcePicker()),
+                actionButton("Download APK", view -> updateManager.openApkDownload())
         ));
-        content.addView(sectionTitle("Permissions"));
-        content.addView(infoBlock("Android", permissionSummary()));
+        content.addView(sectionTitle("Server installation"));
+        content.addView(serverInstallPanel());
+        content.addView(sectionTitle("Android access"));
+        content.addView(infoBlock("Permissions", permissionSummary()));
         content.addView(actionPanel(
                 actionButton("Install permission", view -> openInstallPermissionSettings()),
                 actionButton("Notifications", view -> requestNotificationPermission()),
@@ -881,6 +953,91 @@ public final class MainActivity extends Activity {
                 dp(28)
         ));
         setStatus("Update and permissions");
+    }
+
+    private View updateSummaryPanel() {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.HORIZONTAL);
+        panel.setGravity(Gravity.CENTER_VERTICAL);
+        panel.setPadding(dp(14), dp(12), dp(12), dp(12));
+        panel.setBackground(cardBackground());
+
+        TextView icon = new TextView(this);
+        icon.setText("⇩");
+        icon.setTextColor(COLOR_ACCENT);
+        icon.setTextSize(24);
+        icon.setGravity(Gravity.CENTER);
+        icon.setBackground(rounded(COLOR_ACCENT_DARK, 8, Color.TRANSPARENT, 0));
+        panel.addView(icon, new LinearLayout.LayoutParams(dp(44), dp(44)));
+
+        LinearLayout details = new LinearLayout(this);
+        details.setOrientation(LinearLayout.VERTICAL);
+        details.setPadding(dp(12), 0, dp(8), 0);
+        TextView version = new TextView(this);
+        version.setText("v" + BuildConfig.VERSION_NAME + "  ·  build " + BuildConfig.VERSION_CODE);
+        version.setTextColor(COLOR_TEXT);
+        version.setTextSize(14);
+        version.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        TextView source = bodyText(updateSourceHost());
+        source.setTextSize(10);
+        source.setSingleLine(true);
+        source.setEllipsize(TextUtils.TruncateAt.MIDDLE);
+        details.addView(version, matchWrap());
+        details.addView(source, matchWrap());
+        panel.addView(details, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+        Button release = terminalToolButton("↗", view -> updateManager.openReleasePage());
+        release.setContentDescription("Open release page");
+        panel.addView(release);
+        LinearLayout.LayoutParams params = matchWrap();
+        params.bottomMargin = dp(8);
+        panel.setLayoutParams(params);
+        return panel;
+    }
+
+    private View serverInstallPanel() {
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(12), dp(11), dp(12), dp(12));
+        panel.setBackground(panelBackground());
+
+        TextView title = new TextView(this);
+        title.setText("tmux-ui server");
+        title.setTextColor(COLOR_TEXT);
+        title.setTextSize(15);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        panel.addView(title, matchWrap());
+        TextView requirements = bodyText(
+                "Place tmux-ui.run on the target host\nNode.js 20+  ·  npm  ·  tmux  ·  Tailscale"
+        );
+        requirements.setTextSize(10);
+        requirements.setPadding(0, dp(3), 0, dp(9));
+        panel.addView(requirements, matchWrap());
+
+        TextView command = new TextView(this);
+        command.setText(SERVER_INSTALL_COMMANDS);
+        command.setTextColor(COLOR_TEXT);
+        command.setTextSize(11);
+        command.setTypeface(Typeface.MONOSPACE);
+        command.setTextIsSelectable(true);
+        command.setPadding(dp(10), dp(9), dp(10), dp(9));
+        command.setBackground(rounded(COLOR_FIELD, 7, COLOR_BORDER_SOFT, 1));
+        panel.addView(command, matchWrap());
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        Button copy = compactButton("Copy commands", view -> copyText("Server install", SERVER_INSTALL_COMMANDS));
+        actions.addView(copy, new LinearLayout.LayoutParams(0, dp(40), 1));
+        Button add = compactButton("Add server", view -> promptCustomServer());
+        LinearLayout.LayoutParams addParams = new LinearLayout.LayoutParams(0, dp(40), 1);
+        addParams.leftMargin = dp(7);
+        actions.addView(add, addParams);
+        panel.addView(actions, spacedMatchWrap(10, 0));
+
+        LinearLayout.LayoutParams params = matchWrap();
+        params.bottomMargin = dp(8);
+        panel.setLayoutParams(params);
+        return panel;
     }
 
     private void renderAboutScreen() {
@@ -1692,6 +1849,7 @@ public final class MainActivity extends Activity {
     private void openTerminal(String sessionName) {
         closeTerminalSocket();
         activeSessionName = sessionName;
+        loadTerminalDisplaySettings(sessionName);
         terminalViewMode = TERMINAL_VIEW_CHAT;
         projectList = null;
         sessionGroupList = null;
@@ -1727,18 +1885,18 @@ public final class MainActivity extends Activity {
 
         terminalScroll = new ScrollView(this);
         terminalScroll.setFillViewport(true);
-        terminalScroll.setBackgroundColor(COLOR_TERMINAL_BG);
+        terminalScroll.setBackgroundColor(terminalBackgroundColor());
         terminalText = new TextView(this);
         terminalText.setTextColor(COLOR_TEXT);
-        terminalText.setTextSize(11);
-        terminalText.setTypeface(Typeface.MONOSPACE);
+        terminalText.setTextSize(terminalFontSizeSp);
+        terminalText.setTypeface(terminalTypeface());
         terminalText.setIncludeFontPadding(false);
         terminalText.setHorizontallyScrolling(true);
-        terminalText.setLineSpacing(0, 1.05f);
+        terminalText.setLineSpacing(0, terminalLineHeight);
         terminalText.setGravity(Gravity.BOTTOM | Gravity.START);
         terminalText.setTextIsSelectable(terminalSelectionEnabled);
         terminalText.setPadding(dp(2), dp(8), dp(2), 0);
-        terminalText.setBackgroundColor(COLOR_TERMINAL_BG);
+        terminalText.setBackgroundColor(terminalBackgroundColor());
         terminalChatList = new LinearLayout(this);
         terminalChatList.setOrientation(LinearLayout.VERTICAL);
         terminalChatList.setPadding(0, dp(12), 0, 0);
@@ -2067,8 +2225,8 @@ public final class MainActivity extends Activity {
         TextView content = conversationContent(message, false);
         content.setText((user ? "› " : "• ") + defaultValue(message.content, "(empty)"));
         content.setTextColor(user ? COLOR_ACCENT : COLOR_TEXT);
-        content.setTextSize(12);
-        content.setTypeface(Typeface.MONOSPACE, user ? Typeface.BOLD : Typeface.NORMAL);
+        content.setTextSize(terminalFontSizeSp);
+        content.setTypeface(terminalTypeface(), user ? Typeface.BOLD : Typeface.NORMAL);
         content.setPadding(0, 0, 0, 0);
         block.addView(content, matchWrap());
 
@@ -2143,8 +2301,8 @@ public final class MainActivity extends Activity {
         TextView content = new TextView(this);
         content.setText(message.content.isEmpty() ? "(empty)" : message.content);
         content.setTextColor(COLOR_TEXT);
-        content.setTextSize(tool ? 11 : 14);
-        content.setTypeface(tool ? Typeface.MONOSPACE : Typeface.DEFAULT);
+        content.setTextSize(terminalFontSizeSp);
+        content.setTypeface(terminalTypeface());
         content.setTextIsSelectable(true);
         content.setLineSpacing(dp(2), 1f);
         content.setPadding(0, dp(6), 0, 0);
@@ -2193,13 +2351,13 @@ public final class MainActivity extends Activity {
 
         terminalLiveOutputText = new TextView(this);
         terminalLiveOutputText.setTextColor(COLOR_TEXT_MUTED);
-        terminalLiveOutputText.setTextSize(11);
-        terminalLiveOutputText.setTypeface(Typeface.MONOSPACE);
+        terminalLiveOutputText.setTextSize(terminalFontSizeSp);
+        terminalLiveOutputText.setTypeface(terminalTypeface());
         terminalLiveOutputText.setIncludeFontPadding(false);
         terminalLiveOutputText.setHorizontallyScrolling(false);
-        terminalLiveOutputText.setLineSpacing(0, 1.05f);
+        terminalLiveOutputText.setLineSpacing(0, terminalLineHeight);
         terminalLiveOutputText.setGravity(Gravity.BOTTOM | Gravity.START);
-        terminalLiveOutputText.setBackgroundColor(COLOR_TERMINAL_BG);
+        terminalLiveOutputText.setBackgroundColor(terminalBackgroundColor());
         terminalLiveOutputText.setPadding(0, dp(5), 0, 0);
         terminalLiveOutputText.setMovementMethod(LinkMovementMethod.getInstance());
         terminalLiveOutputText.setHighlightColor(Color.TRANSPARENT);
@@ -2392,152 +2550,71 @@ public final class MainActivity extends Activity {
     }
 
     private void showSessionActions(String sessionName) {
-        String[] items = {
-                "Status",
-                "Rename",
-                "Send command",
-                "Split horizontal",
-                "Split vertical",
-                "Select pane",
-                "Kill pane",
-                "Pin session",
-                "Unpin session",
-                "Mute session",
-                "Unmute session",
-                "Session settings",
-                "Add to kanban project",
-                "Post hook event"
-        };
-        new AlertDialog.Builder(this)
-                .setTitle(sessionName)
-                .setItems(items, (dialog, which) -> {
-                    switch (which) {
-                        case 0:
-                            showRaw("Session status", () -> api.sessionStatus(sessionName));
-                            break;
-                        case 1:
-                            promptRenameSession(sessionName);
-                            break;
-                        case 2:
-                            promptSendCommand(sessionName);
-                            break;
-                        case 3:
-                            runApiAction("Split horizontal", () -> api.splitPane(sessionName, "horizontal"));
-                            break;
-                        case 4:
-                            runApiAction("Split vertical", () -> api.splitPane(sessionName, "vertical"));
-                            break;
-                        case 5:
-                            promptPaneId("Select pane", paneId -> api.selectPane(sessionName, paneId));
-                            break;
-                        case 6:
-                            promptPaneId("Kill pane", paneId -> api.killPane(sessionName, paneId));
-                            break;
-                        case 7:
-                            runApiAction("Pin session", () -> api.setPinned(sessionName, true));
-                            break;
-                        case 8:
-                            runApiAction("Unpin session", () -> api.setPinned(sessionName, false));
-                            break;
-                        case 9:
-                            runApiAction("Mute session", () -> api.setMuted(sessionName, true));
-                            break;
-                        case 10:
-                            runApiAction("Unmute session", () -> api.setMuted(sessionName, false));
-                            break;
-                        case 11:
-                            promptSessionSettings(sessionName);
-                            break;
-                        case 12:
-                            promptAddKanbanSession(sessionName);
-                            break;
-                        case 13:
-                            promptPostHookEvent(sessionName);
-                            break;
-                        default:
-                            break;
-                    }
-                })
-                .show();
+        Dialog dialog = new Dialog(this);
+        LinearLayout sheet = bottomSheetContent(dialog, sessionName, "Session actions");
+        addSheetActionSection(dialog, sheet, "OPEN & MANAGE",
+                new SheetAction("›_", "Open", () -> openTerminal(sessionName)),
+                new SheetAction("◎", "Status", () -> showRaw("Session status", () -> api.sessionStatus(sessionName))),
+                new SheetAction("✎", "Rename", () -> promptRenameSession(sessionName)),
+                new SheetAction("$", "Command", () -> promptSendCommand(sessionName)),
+                new SheetAction("Aa", "Display", () -> promptSessionSettings(sessionName)),
+                new SheetAction("▰", "Project", () -> promptAddKanbanSession(sessionName))
+        );
+        addSheetActionSection(dialog, sheet, "PANES",
+                new SheetAction("↔", "Split H", () -> runApiAction("Split horizontal", () -> api.splitPane(sessionName, "horizontal"))),
+                new SheetAction("↕", "Split V", () -> runApiAction("Split vertical", () -> api.splitPane(sessionName, "vertical"))),
+                new SheetAction("◫", "Select", () -> promptPaneId("Select pane", paneId -> api.selectPane(sessionName, paneId))),
+                new SheetAction("×", "Kill pane", () -> promptPaneId("Kill pane", paneId -> api.killPane(sessionName, paneId)), true)
+        );
+        addSheetActionSection(dialog, sheet, "PREFERENCES",
+                new SheetAction("★", "Pin", () -> runApiAction("Pin session", () -> api.setPinned(sessionName, true))),
+                new SheetAction("☆", "Unpin", () -> runApiAction("Unpin session", () -> api.setPinned(sessionName, false))),
+                new SheetAction("◉", "Mute", () -> runApiAction("Mute session", () -> api.setMuted(sessionName, true))),
+                new SheetAction("○", "Unmute", () -> runApiAction("Unmute session", () -> api.setMuted(sessionName, false))),
+                new SheetAction("⚑", "Hook", () -> promptPostHookEvent(sessionName))
+        );
+        showBottomSheet(dialog, sheet, null);
     }
 
     private void showTerminalActions(String sessionName) {
-        String[] items = {
-                terminalViewMode == TERMINAL_VIEW_CHAT ? "Open raw terminal" : "Open content view",
-                "Reconnect",
-                "Clear local view and tmux history",
-                "Split horizontal",
-                "Split vertical",
-                "Zoom active pane",
-                "Page up",
-                "Page down",
-                "Session status",
-                "Send command",
-                "Tmux prefix",
-                "Detach tmux client",
-                "New tmux window",
-                "Next tmux window",
-                "Previous tmux window"
-        };
-        new AlertDialog.Builder(this)
-                .setTitle(sessionName)
-                .setItems(items, (dialog, which) -> {
-                    switch (which) {
-                        case 0:
-                            showTerminalView(terminalViewMode == TERMINAL_VIEW_CHAT
-                                    ? TERMINAL_VIEW_FULL : TERMINAL_VIEW_CHAT, true);
-                            break;
-                        case 1:
-                            connectTerminal(sessionName);
-                            break;
-                        case 2:
-                            terminalScreen.clear();
-                            terminalText.setText("");
-                            if (terminalSocket != null) {
-                                terminalSocket.clearHistory();
-                            }
-                            break;
-                        case 3:
-                            runApiAction("Split horizontal", () -> api.splitPane(sessionName, "horizontal"));
-                            break;
-                        case 4:
-                            runApiAction("Split vertical", () -> api.splitPane(sessionName, "vertical"));
-                            break;
-                        case 5:
-                            sendTerminalInput("\u0002z");
-                            break;
-                        case 6:
-                            scrollTerminalHistory(-terminalRows);
-                            break;
-                        case 7:
-                            scrollTerminalHistory(terminalRows);
-                            break;
-                        case 8:
-                            showRaw("Session status", () -> api.sessionStatus(sessionName));
-                            break;
-                        case 9:
-                            promptSendCommand(sessionName);
-                            break;
-                        case 10:
-                            sendTerminalInput("\u0002");
-                            break;
-                        case 11:
-                            sendTerminalInput("\u0002d");
-                            break;
-                        case 12:
-                            sendTerminalInput("\u0002c");
-                            break;
-                        case 13:
-                            sendTerminalInput("\u0002n");
-                            break;
-                        case 14:
-                            sendTerminalInput("\u0002p");
-                            break;
-                        default:
-                            break;
-                    }
-                })
-                .show();
+        Dialog dialog = new Dialog(this);
+        LinearLayout sheet = bottomSheetContent(dialog, sessionName, "Terminal controls");
+        addSheetActionSection(dialog, sheet, "VIEW",
+                new SheetAction("◫", terminalViewMode == TERMINAL_VIEW_CHAT ? "Raw" : "Content", () ->
+                        showTerminalView(terminalViewMode == TERMINAL_VIEW_CHAT
+                                ? TERMINAL_VIEW_FULL : TERMINAL_VIEW_CHAT, true)),
+                new SheetAction("↻", "Reconnect", () -> connectTerminal(sessionName)),
+                new SheetAction("◎", "Status", () -> showRaw("Session status", () -> api.sessionStatus(sessionName))),
+                new SheetAction("Aa", "Display", () -> promptSessionSettings(sessionName)),
+                new SheetAction("↑", "Older", () -> scrollTerminalHistory(-terminalRows)),
+                new SheetAction("↓", "Newer", () -> scrollTerminalHistory(terminalRows))
+        );
+        addSheetActionSection(dialog, sheet, "LAYOUT",
+                new SheetAction("↔", "Split H", () -> runApiAction("Split horizontal", () -> api.splitPane(sessionName, "horizontal"))),
+                new SheetAction("↕", "Split V", () -> runApiAction("Split vertical", () -> api.splitPane(sessionName, "vertical"))),
+                new SheetAction("▣", "Zoom", () -> sendTerminalInput("\u0002z")),
+                new SheetAction("⌫", "Clear", this::clearTerminalHistory, true)
+        );
+        addSheetActionSection(dialog, sheet, "TMUX",
+                new SheetAction("C-b", "Prefix", () -> sendTerminalInput("\u0002")),
+                new SheetAction("⇥", "Detach", () -> sendTerminalInput("\u0002d")),
+                new SheetAction("＋", "New win", () -> sendTerminalInput("\u0002c")),
+                new SheetAction("→", "Next win", () -> sendTerminalInput("\u0002n")),
+                new SheetAction("←", "Prev win", () -> sendTerminalInput("\u0002p")),
+                new SheetAction("$", "Command", () -> promptSendCommand(sessionName))
+        );
+        showBottomSheet(dialog, sheet, null);
+    }
+
+    private void clearTerminalHistory() {
+        terminalScreen.clear();
+        if (terminalText != null) {
+            terminalText.setText("");
+        }
+        if (terminalSocket != null) {
+            terminalSocket.clearHistory();
+        }
+        setStatus("Terminal history cleared");
     }
 
     private LinearLayout createComposerBar() {
@@ -2809,25 +2886,249 @@ public final class MainActivity extends Activity {
     }
 
     private void promptSessionSettings(String sessionName) {
-        LinearLayout form = formRoot();
-        EditText fontSize = formField(form, "Font size", "14");
-        EditText fontFamily = formField(form, "Font family", "monospace");
-        EditText lineHeight = formField(form, "Line height", "1.25");
-        EditText themeId = formField(form, "Theme ID", "dark");
-        new AlertDialog.Builder(this)
-                .setTitle("Session settings")
-                .setView(form)
-                .setNegativeButton("Cancel", null)
-                .setPositiveButton("Save", (dialog, which) -> runApiAction("Session settings", () ->
+        String key = sessionName.isEmpty() ? "default" : sessionName;
+        float currentSize = prefs.getFloat("terminal_font_size:" + key,
+                prefs.getFloat("terminal_font_size:default", 11f));
+        float currentLineHeight = prefs.getFloat("terminal_line_height:" + key,
+                prefs.getFloat("terminal_line_height:default", 1.05f));
+        String currentFamily = prefs.getString("terminal_font_family:" + key,
+                prefs.getString("terminal_font_family:default", "monospace"));
+        String currentTheme = prefs.getString("terminal_theme:" + key,
+                prefs.getString("terminal_theme:default", "dark"));
+
+        Dialog dialog = new Dialog(this);
+        LinearLayout sheet = bottomSheetContent(
+                dialog,
+                sessionName.isEmpty() ? "Session display" : sessionName,
+                sessionName.isEmpty() ? "Default terminal typography" : "Terminal typography for this session"
+        );
+
+        TextView sizeValue = settingValue("" + Math.round(currentSize) + " sp");
+        sheet.addView(settingHeader("FONT SIZE", sizeValue), matchWrap());
+        SeekBar size = new SeekBar(this);
+        size.setMin(9);
+        size.setMax(20);
+        size.setProgress(Math.round(currentSize));
+        size.setOnSeekBarChangeListener(seekListener(value -> sizeValue.setText(value + " sp")));
+        sheet.addView(size, matchWrap());
+
+        TextView familyLabel = formLabel("FONT");
+        familyLabel.setPadding(0, dp(10), 0, dp(6));
+        sheet.addView(familyLabel, matchWrap());
+        String[] selectedFamily = {currentFamily};
+        LinearLayout familyRow = new LinearLayout(this);
+        familyRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button mono = settingChoice("Mono", "monospace", selectedFamily);
+        Button sans = settingChoice("Sans", "sans", selectedFamily);
+        Button serif = settingChoice("Serif", "serif", selectedFamily);
+        Button[] familyButtons = {mono, sans, serif};
+        String[] familyValues = {"monospace", "sans", "serif"};
+        for (int index = 0; index < familyButtons.length; index++) {
+            Button button = familyButtons[index];
+            String value = familyValues[index];
+            button.setOnClickListener(view -> {
+                selectedFamily[0] = value;
+                for (int item = 0; item < familyButtons.length; item++) {
+                    styleSettingChoice(familyButtons[item], familyValues[item].equals(selectedFamily[0]));
+                }
+            });
+            styleSettingChoice(button, value.equals(selectedFamily[0]));
+            LinearLayout.LayoutParams choiceParams = new LinearLayout.LayoutParams(0, dp(40), 1);
+            if (index > 0) {
+                choiceParams.leftMargin = dp(6);
+            }
+            familyRow.addView(button, choiceParams);
+        }
+        sheet.addView(familyRow, matchWrap());
+
+        TextView themeLabel = formLabel("THEME");
+        themeLabel.setPadding(0, dp(10), 0, dp(6));
+        sheet.addView(themeLabel, matchWrap());
+        String[] selectedTheme = {currentTheme};
+        LinearLayout themeRow = new LinearLayout(this);
+        themeRow.setOrientation(LinearLayout.HORIZONTAL);
+        Button dark = settingChoice("Dark", "dark", selectedTheme);
+        Button oled = settingChoice("OLED", "oled", selectedTheme);
+        Button[] themeButtons = {dark, oled};
+        String[] themeValues = {"dark", "oled"};
+        for (int index = 0; index < themeButtons.length; index++) {
+            Button button = themeButtons[index];
+            String value = themeValues[index];
+            button.setOnClickListener(view -> {
+                selectedTheme[0] = value;
+                for (int item = 0; item < themeButtons.length; item++) {
+                    styleSettingChoice(themeButtons[item], themeValues[item].equals(selectedTheme[0]));
+                }
+            });
+            styleSettingChoice(button, value.equals(selectedTheme[0]));
+            LinearLayout.LayoutParams choiceParams = new LinearLayout.LayoutParams(0, dp(40), 1);
+            if (index > 0) {
+                choiceParams.leftMargin = dp(6);
+            }
+            themeRow.addView(button, choiceParams);
+        }
+        sheet.addView(themeRow, matchWrap());
+
+        TextView lineValue = settingValue(Math.round(currentLineHeight * 100f) + "%");
+        sheet.addView(settingHeader("LINE HEIGHT", lineValue), matchWrap());
+        SeekBar lineHeight = new SeekBar(this);
+        lineHeight.setMin(90);
+        lineHeight.setMax(160);
+        lineHeight.setProgress(Math.round(currentLineHeight * 100f));
+        lineHeight.setOnSeekBarChangeListener(seekListener(value -> lineValue.setText(value + "%")));
+        sheet.addView(lineHeight, matchWrap());
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        Button reset = compactButton("Reset", view -> {
+            prefs.edit()
+                    .remove("terminal_font_size:" + key)
+                    .remove("terminal_font_family:" + key)
+                    .remove("terminal_line_height:" + key)
+                    .remove("terminal_theme:" + key)
+                    .apply();
+            dialog.dismiss();
+            if (sessionName.equals(activeSessionName) || sessionName.isEmpty()) {
+                loadTerminalDisplaySettings(defaultValue(activeSessionName, ""));
+                applyTerminalDisplaySettings();
+            }
+        });
+        actions.addView(reset, new LinearLayout.LayoutParams(0, dp(44), 1));
+        Button save = primaryButton("Save", view -> {
+            float selectedSize = size.getProgress();
+            float selectedHeight = lineHeight.getProgress() / 100f;
+            prefs.edit()
+                    .putFloat("terminal_font_size:" + key, selectedSize)
+                    .putString("terminal_font_family:" + key, selectedFamily[0])
+                    .putFloat("terminal_line_height:" + key, selectedHeight)
+                    .putString("terminal_theme:" + key, selectedTheme[0])
+                    .apply();
+            dialog.dismiss();
+            if (sessionName.equals(activeSessionName) || sessionName.isEmpty()) {
+                loadTerminalDisplaySettings(defaultValue(activeSessionName, ""));
+                applyTerminalDisplaySettings();
+            }
+            if (!sessionName.isEmpty()) {
+                executor.execute(() -> {
+                    try {
                         api.updateSessionSettings(
                                 sessionName,
-                                Integer.parseInt(defaultValue(fontSize.getText().toString().trim(), "14")),
-                                defaultValue(fontFamily.getText().toString().trim(), "monospace"),
-                                Double.parseDouble(defaultValue(lineHeight.getText().toString().trim(), "1.25")),
-                                defaultValue(themeId.getText().toString().trim(), "dark")
-                        )
-                ))
-                .show();
+                                Math.round(selectedSize),
+                                selectedFamily[0],
+                                selectedHeight,
+                                selectedTheme[0]
+                        );
+                    } catch (Exception error) {
+                        runOnUiThread(() -> showMessage("Settings sync failed: " + error.getMessage()));
+                    }
+                });
+            }
+            showMessage("Session display saved");
+        });
+        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(0, dp(44), 1);
+        saveParams.leftMargin = dp(8);
+        actions.addView(save, saveParams);
+        sheet.addView(actions, spacedMatchWrap(16, 0));
+        showBottomSheet(dialog, sheet, null);
+    }
+
+    private void loadTerminalDisplaySettings(String sessionName) {
+        String key = sessionName == null || sessionName.isEmpty() ? "default" : sessionName;
+        terminalFontSizeSp = prefs.getFloat("terminal_font_size:" + key,
+                prefs.getFloat("terminal_font_size:default", 11f));
+        terminalLineHeight = prefs.getFloat("terminal_line_height:" + key,
+                prefs.getFloat("terminal_line_height:default", 1.05f));
+        terminalFontFamily = prefs.getString("terminal_font_family:" + key,
+                prefs.getString("terminal_font_family:default", "monospace"));
+        terminalThemeId = prefs.getString("terminal_theme:" + key,
+                prefs.getString("terminal_theme:default", "dark"));
+    }
+
+    private void applyTerminalDisplaySettings() {
+        Typeface typeface = terminalTypeface();
+        if (terminalText != null) {
+            terminalText.setTextSize(terminalFontSizeSp);
+            terminalText.setTypeface(typeface);
+            terminalText.setLineSpacing(0, terminalLineHeight);
+            terminalText.setBackgroundColor(terminalBackgroundColor());
+        }
+        if (terminalLiveOutputText != null) {
+            terminalLiveOutputText.setTextSize(terminalFontSizeSp);
+            terminalLiveOutputText.setTypeface(typeface);
+            terminalLiveOutputText.setLineSpacing(0, terminalLineHeight);
+            terminalLiveOutputText.setBackgroundColor(terminalBackgroundColor());
+        }
+        if (terminalScroll != null) {
+            terminalScroll.setBackgroundColor(terminalBackgroundColor());
+        }
+        if (terminalChatList != null && terminalViewMode == TERMINAL_VIEW_CHAT) {
+            renderTerminalConversation();
+        }
+        resizeTerminalToViewport(true);
+    }
+
+    private Typeface terminalTypeface() {
+        if ("sans".equals(terminalFontFamily)) {
+            return Typeface.SANS_SERIF;
+        }
+        if ("serif".equals(terminalFontFamily)) {
+            return Typeface.SERIF;
+        }
+        return Typeface.MONOSPACE;
+    }
+
+    private int terminalBackgroundColor() {
+        return "oled".equals(terminalThemeId) ? Color.BLACK : COLOR_TERMINAL_BG;
+    }
+
+    private TextView settingValue(String text) {
+        TextView value = new TextView(this);
+        value.setText(text);
+        value.setTextColor(COLOR_ACCENT);
+        value.setTextSize(11);
+        value.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        value.setGravity(Gravity.END);
+        return value;
+    }
+
+    private LinearLayout settingHeader(String label, TextView value) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(0, dp(12), 0, 0);
+        row.addView(formLabel(label), new LinearLayout.LayoutParams(0, dp(28), 1));
+        row.addView(value, new LinearLayout.LayoutParams(dp(80), dp(28)));
+        return row;
+    }
+
+    private SeekBar.OnSeekBarChangeListener seekListener(IntValueListener listener) {
+        return new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                listener.onValue(progress);
+            }
+
+            @Override
+            public void onStartTrackingTouch(SeekBar seekBar) {
+            }
+
+            @Override
+            public void onStopTrackingTouch(SeekBar seekBar) {
+            }
+        };
+    }
+
+    private Button settingChoice(String label, String value, String[] selected) {
+        Button button = toolbarButton(label, view -> selected[0] = value);
+        button.setTextSize(11);
+        return button;
+    }
+
+    private void styleSettingChoice(Button button, boolean selected) {
+        button.setTextColor(selected ? Color.rgb(14, 38, 24) : COLOR_TEXT_MUTED);
+        button.setBackground(selected
+                ? rounded(COLOR_ACCENT, 7, COLOR_ACCENT, 1)
+                : rounded(COLOR_CARD_ALT, 7, COLOR_BORDER, 1));
     }
 
     private void promptGroupMessages() {
@@ -3336,6 +3637,46 @@ public final class MainActivity extends Activity {
         return sheet;
     }
 
+    private void addSheetActionSection(
+            Dialog dialog,
+            LinearLayout sheet,
+            String title,
+            SheetAction... actions
+    ) {
+        TextView label = formLabel(title);
+        label.setPadding(dp(2), dp(8), dp(2), dp(6));
+        sheet.addView(label, matchWrap());
+        for (int index = 0; index < actions.length; index += 3) {
+            LinearLayout row = new LinearLayout(this);
+            row.setOrientation(LinearLayout.HORIZONTAL);
+            for (int column = 0; column < 3; column++) {
+                int actionIndex = index + column;
+                if (actionIndex >= actions.length) {
+                    row.addView(new View(this), new LinearLayout.LayoutParams(0, dp(54), 1));
+                    continue;
+                }
+                SheetAction action = actions[actionIndex];
+                Button button = toolbarButton(action.icon + "\n" + action.title, view -> {
+                    dialog.dismiss();
+                    action.action.run();
+                });
+                button.setTextSize(action.icon.length() > 2 ? 9 : 11);
+                button.setGravity(Gravity.CENTER);
+                button.setPadding(dp(3), dp(3), dp(3), dp(3));
+                if (action.danger) {
+                    button.setTextColor(COLOR_DANGER);
+                }
+                LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(54), 1);
+                if (column > 0) {
+                    params.leftMargin = dp(6);
+                }
+                params.bottomMargin = dp(6);
+                row.addView(button, params);
+            }
+            sheet.addView(row, matchWrap());
+        }
+    }
+
     private EditText sheetField(LinearLayout sheet, String labelText, String hint, String value) {
         TextView label = formLabel(labelText);
         label.setPadding(0, dp(10), 0, dp(6));
@@ -3355,7 +3696,14 @@ public final class MainActivity extends Activity {
     }
 
     private void showBottomSheet(Dialog dialog, LinearLayout sheet, EditText focus) {
-        dialog.setContentView(sheet);
+        ScrollView scroller = new ScrollView(this);
+        scroller.setFillViewport(false);
+        scroller.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
+        scroller.addView(sheet, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        ));
+        dialog.setContentView(scroller);
         dialog.setCanceledOnTouchOutside(true);
         dialog.show();
         Window window = dialog.getWindow();
@@ -3694,6 +4042,16 @@ public final class MainActivity extends Activity {
         } else {
             showMessage("Clipboard is empty");
         }
+    }
+
+    private void copyText(String label, String text) {
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboard == null) {
+            showMessage("Clipboard unavailable");
+            return;
+        }
+        clipboard.setPrimaryClip(ClipData.newPlainText(label, text));
+        showMessage(label + " copied");
     }
 
     private void insertComposerText(String text) {
@@ -4574,6 +4932,7 @@ public final class MainActivity extends Activity {
             eventSocket = null;
         }
         executor.shutdownNow();
+        serverProbeExecutor.shutdownNow();
         super.onDestroy();
     }
 
@@ -4583,5 +4942,27 @@ public final class MainActivity extends Activity {
 
     private interface TextApiAction {
         void run(String text) throws Exception;
+    }
+
+    private interface IntValueListener {
+        void onValue(int value);
+    }
+
+    private static final class SheetAction {
+        final String icon;
+        final String title;
+        final Runnable action;
+        final boolean danger;
+
+        SheetAction(String icon, String title, Runnable action) {
+            this(icon, title, action, false);
+        }
+
+        SheetAction(String icon, String title, Runnable action, boolean danger) {
+            this.icon = icon;
+            this.title = title;
+            this.action = action;
+            this.danger = danger;
+        }
     }
 }
