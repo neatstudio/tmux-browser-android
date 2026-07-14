@@ -146,31 +146,80 @@ final class TerminalScreenBuffer {
 
     CharSequence renderFocused(Set<String> expandedBlocks, FocusToggle toggle) {
         SpannableStringBuilder output = new SpannableStringBuilder();
-        List<String> hiddenRows = new ArrayList<>();
-        int hiddenStart = -1;
-        for (int row = 0; row < rows; row++) {
+        int row = 0;
+        while (row < rows) {
             String text = rowText(row).trim();
-            if (containsHan(text)) {
-                if (!hiddenRows.isEmpty()) {
-                    appendFocusBlock(output, hiddenRows, hiddenStart, row - 1, expandedBlocks, toggle);
-                    hiddenRows.clear();
-                    hiddenStart = -1;
+            if (!isCollapsibleHeader(text)) {
+                if (text.isEmpty()) {
+                    if (output.length() > 0) {
+                        output.append('\n');
+                    }
+                } else {
+                    appendStyledRow(output, row);
                 }
-                appendLine(output, text);
-            } else if (!text.isEmpty()) {
-                if (hiddenStart < 0) {
-                    hiddenStart = row;
-                }
-                hiddenRows.add(text);
+                row++;
+                continue;
             }
-        }
-        if (!hiddenRows.isEmpty()) {
-            appendFocusBlock(output, hiddenRows, hiddenStart, rows - 1, expandedBlocks, toggle);
+
+            int startRow = row;
+            List<String> hiddenRows = new ArrayList<>();
+            hiddenRows.add(text);
+            row++;
+            while (row < rows) {
+                String next = rowText(row).trim();
+                if (next.isEmpty() || isTopLevelLine(next)) {
+                    break;
+                }
+                hiddenRows.add(next);
+                row++;
+            }
+            appendFocusBlock(output, hiddenRows, startRow, row - 1, expandedBlocks, toggle);
         }
         if (output.length() == 0) {
-            output.append("暂无可读内容");
+            output.append("Waiting for terminal output");
         }
         return output;
+    }
+
+    private boolean isCollapsibleHeader(String text) {
+        boolean activity = text.startsWith("• ") || text.startsWith("● ");
+        String header = stripActivityMarker(text);
+        return activity && (header.startsWith("Ran ")
+                || header.equals("Explored")
+                || header.startsWith("Explored ")
+                || header.startsWith("Searched ")
+                || header.startsWith("Read ")
+                || header.startsWith("List ")
+                || header.startsWith("Viewed ")
+                || header.startsWith("Opened ")
+                || header.startsWith("Fetched ")
+                || header.startsWith("Downloaded ")
+                || header.startsWith("Wrote ")
+                || header.startsWith("Edited ")
+                || header.startsWith("Applied ")
+                || header.startsWith("Updated ")
+                || header.startsWith("Checked ")
+                || header.startsWith("Inspected ")
+                || header.startsWith("Waited ")
+                || header.startsWith("Working")
+                || header.startsWith("Stop hook"))
+                || text.startsWith("─ Worked for ");
+    }
+
+    private boolean isTopLevelLine(String text) {
+        return text.startsWith("• ")
+                || text.startsWith("● ")
+                || text.startsWith("› ")
+                || text.startsWith("> ")
+                || text.startsWith("─ ")
+                || isCollapsibleHeader(text);
+    }
+
+    private String stripActivityMarker(String text) {
+        if (text.startsWith("• ") || text.startsWith("● ")) {
+            return text.substring(2).trim();
+        }
+        return text;
     }
 
     private void appendFocusBlock(
@@ -208,25 +257,22 @@ final class TerminalScreenBuffer {
     }
 
     private String focusSummary(List<String> lines) {
+        String first = stripActivityMarker(lines.get(0));
         String joined = String.join(" ", lines).toLowerCase(Locale.ROOT);
         String type;
-        if (joined.contains("error") || joined.contains("failed") || joined.contains("exception")) {
-            type = "错误输出";
-        } else if (joined.contains("working") || joined.contains("running")
-                || joined.contains("waiting") || joined.contains("interrupt")) {
-            type = "运行状态";
-        } else if (joined.contains("test") || joined.contains("build") || joined.contains("compile")
-                || joined.contains("gradle") || joined.contains("webpack") || joined.contains("npm")) {
-            type = "构建/测试";
-        } else if (joined.contains("git ") || joined.contains("commit") || joined.contains("push")) {
-            type = "Git 操作";
-        } else if (lines.get(0).startsWith(">") || lines.get(0).startsWith("$")
-                || lines.get(0).startsWith("!")) {
-            type = "命令与输出";
+        if (first.startsWith("Explored") || first.startsWith("Searched")
+                || first.startsWith("Read ") || first.startsWith("List ")
+                || first.startsWith("Viewed ") || first.startsWith("Inspected ")) {
+            type = "Explored";
+        } else if (first.startsWith("Working") || first.startsWith("Stop hook")
+                || first.startsWith("─ Worked for ")) {
+            type = "Status";
+        } else if (joined.contains("error") || joined.contains("failed") || joined.contains("exception")) {
+            type = "Command failed";
         } else {
-            type = "终端细节";
+            type = "Command output";
         }
-        return type + " · " + lines.size() + " 行 · " + compactSummary(lines.get(0), 42);
+        return type + " · " + lines.size() + " lines · " + compactSummary(first, 48);
     }
 
     private String compactSummary(String text, int maxChars) {
@@ -242,6 +288,18 @@ final class TerminalScreenBuffer {
             output.append('\n');
         }
         output.append(text);
+    }
+
+    private void appendStyledRow(SpannableStringBuilder output, int row) {
+        if (output.length() > 0) {
+            output.append('\n');
+        }
+        int limit = cols;
+        while (limit > 0 && cells[row][limit - 1].value == ' '
+                && cells[row][limit - 1].bg == DEFAULT_BG) {
+            limit--;
+        }
+        appendRow(output, row, limit);
     }
 
     private int handleEscape(String text, int index) {
@@ -583,15 +641,19 @@ final class TerminalScreenBuffer {
     }
 
     private void appendRow(SpannableStringBuilder output, int row) {
+        appendRow(output, row, cols);
+    }
+
+    private void appendRow(SpannableStringBuilder output, int row, int limit) {
         int col = 0;
-        while (col < cols) {
+        while (col < limit) {
             Cell first = cells[row][col];
             int start = output.length();
             int fgColor = first.fg;
             int bgColor = first.bg;
             boolean isBold = first.bold;
             boolean isDim = first.dim;
-            while (col < cols) {
+            while (col < limit) {
                 Cell cell = cells[row][col];
                 if (cell.fg != fgColor || cell.bg != bgColor || cell.bold != isBold || cell.dim != isDim) {
                     break;
@@ -624,18 +686,6 @@ final class TerminalScreenBuffer {
             }
         }
         return text.toString();
-    }
-
-    private boolean containsHan(String text) {
-        for (int index = 0; index < text.length(); index++) {
-            Character.UnicodeBlock block = Character.UnicodeBlock.of(text.charAt(index));
-            if (block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS
-                    || block == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A
-                    || block == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private void saveCursor() {

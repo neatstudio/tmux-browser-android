@@ -25,6 +25,7 @@ import android.os.Looper;
 import android.provider.Settings;
 import android.text.TextUtils;
 import android.text.InputType;
+import android.text.method.LinkMovementMethod;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
@@ -154,6 +155,7 @@ public final class MainActivity extends Activity {
     private int lastActiveSessionCount = -1;
     private TerminalScreenBuffer terminalScreen = new TerminalScreenBuffer(DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS);
     private final StringBuilder queuedTerminalInput = new StringBuilder();
+    private final Set<String> terminalExpandedBlocks = new HashSet<>();
     private final Set<String> terminalExpandedMessages = new HashSet<>();
     private final List<ConversationMessage> terminalConversationMessages = new ArrayList<>();
     private boolean terminalConnected;
@@ -1696,6 +1698,7 @@ public final class MainActivity extends Activity {
         terminalSelectionEnabled = false;
         terminalFollowOutput = true;
         terminalKeyPage = 0;
+        terminalExpandedBlocks.clear();
         terminalExpandedMessages.clear();
         terminalConversationMessages.clear();
         terminalLiveStatusText = null;
@@ -1746,7 +1749,6 @@ public final class MainActivity extends Activity {
                 1
         ));
         terminalAccessoryBar = createAccessoryBar();
-        terminalAccessoryBar.setVisibility(terminalViewMode == TERMINAL_VIEW_CHAT ? View.GONE : View.VISIBLE);
         root.addView(terminalAccessoryBar, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 dp(TERMINAL_KEYS_HEIGHT_DP)
@@ -1860,33 +1862,30 @@ public final class MainActivity extends Activity {
         }
         terminalScroll.removeAllViews();
         if (mode == TERMINAL_VIEW_CHAT) {
-            terminalScroll.addView(terminalChatList, new ScrollView.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-            ));
-            renderTerminalConversation();
+            terminalText.setHorizontallyScrolling(false);
+            terminalText.setMovementMethod(LinkMovementMethod.getInstance());
+            terminalText.setHighlightColor(Color.TRANSPARENT);
         } else {
             terminalText.setHorizontallyScrolling(true);
-            terminalText.setGravity(Gravity.BOTTOM | Gravity.START);
             terminalText.setMovementMethod(null);
-            terminalScroll.addView(terminalText, new ScrollView.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-            ));
-            renderTerminalNow();
         }
-        boolean chat = mode == TERMINAL_VIEW_CHAT;
+        terminalText.setGravity(Gravity.BOTTOM | Gravity.START);
+        terminalScroll.addView(terminalText, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        ));
+        renderTerminalNow();
         if (terminalAccessoryBar != null) {
-            terminalAccessoryBar.setVisibility(chat ? View.GONE : View.VISIBLE);
+            terminalAccessoryBar.setVisibility(View.VISIBLE);
         }
         if (terminalComposerTabs != null) {
-            terminalComposerTabs.setVisibility(chat ? View.GONE : View.VISIBLE);
+            terminalComposerTabs.setVisibility(View.VISIBLE);
         }
         if (inputField != null) {
-            inputField.setHint(chat ? "Message" : "type command or text");
+            inputField.setHint(mode == TERMINAL_VIEW_CHAT ? "message or command" : "type command or text");
         }
         if (announce) {
-            setStatus(mode == TERMINAL_VIEW_CHAT ? "Chat view" : "Full terminal mode");
+            setStatus(mode == TERMINAL_VIEW_CHAT ? "Content view" : "Raw terminal mode");
         }
     }
 
@@ -2588,7 +2587,6 @@ public final class MainActivity extends Activity {
         LinearLayout tabGrid = new LinearLayout(this);
         tabGrid.setOrientation(LinearLayout.VERTICAL);
         terminalComposerTabs = tabGrid;
-        tabGrid.setVisibility(terminalViewMode == TERMINAL_VIEW_CHAT ? View.GONE : View.VISIBLE);
         LinearLayout firstTabRow = terminalKeyRow();
         LinearLayout secondTabRow = terminalKeyRow();
         addAccessoryTab(firstTabRow, "Edit", 0);
@@ -3827,10 +3825,21 @@ public final class MainActivity extends Activity {
             return;
         }
         lastTerminalRenderMs = System.currentTimeMillis();
-        terminalText.setMovementMethod(null);
-        terminalText.setText(terminalScreen.render());
+        if (terminalViewMode == TERMINAL_VIEW_CHAT) {
+            terminalText.setMovementMethod(LinkMovementMethod.getInstance());
+            terminalText.setHighlightColor(Color.TRANSPARENT);
+            terminalText.setText(terminalScreen.renderFocused(terminalExpandedBlocks, key -> {
+                if (!terminalExpandedBlocks.add(key)) {
+                    terminalExpandedBlocks.remove(key);
+                }
+                renderTerminalNow();
+            }));
+        } else {
+            terminalText.setMovementMethod(null);
+            terminalText.setText(terminalScreen.render());
+        }
         updateTerminalLivePanel();
-        if (terminalViewMode != TERMINAL_VIEW_CHAT && terminalFollowOutput) {
+        if (terminalFollowOutput) {
             terminalScroll.post(() -> terminalScroll.fullScroll(View.FOCUS_DOWN));
         }
     }
