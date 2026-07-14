@@ -1738,7 +1738,7 @@ public final class MainActivity extends Activity {
         terminalText.setBackgroundColor(COLOR_TERMINAL_BG);
         terminalChatList = new LinearLayout(this);
         terminalChatList.setOrientation(LinearLayout.VERTICAL);
-        terminalChatList.setPadding(dp(10), dp(12), dp(10), dp(18));
+        terminalChatList.setPadding(0, dp(12), 0, dp(18));
         terminalChatList.addView(projectStateText("Loading conversation..."), matchWrap());
         showTerminalView(terminalViewMode, false);
         terminalScroll.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
@@ -1766,6 +1766,8 @@ public final class MainActivity extends Activity {
         });
         inputField.post(() -> {
             inputField.requestFocus();
+            inputField.setSelection(inputField.length());
+            inputField.setCursorVisible(true);
             hideKeyboard();
         });
     }
@@ -2055,7 +2057,7 @@ public final class MainActivity extends Activity {
         boolean user = "user".equals(message.role);
         LinearLayout block = new LinearLayout(this);
         block.setOrientation(LinearLayout.VERTICAL);
-        block.setPadding(dp(2), dp(5), dp(2), dp(7));
+        block.setPadding(dp(10), dp(5), dp(10), dp(7));
 
         TextView content = conversationContent(message, false);
         content.setText((user ? "› " : "• ") + defaultValue(message.content, "(empty)"));
@@ -2098,7 +2100,7 @@ public final class MainActivity extends Activity {
         summary.setTextColor(COLOR_ACCENT_WARM);
         summary.setTextSize(10);
         summary.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        summary.setPadding(dp(2), dp(6), dp(2), dp(6));
+        summary.setPadding(dp(10), dp(6), dp(10), dp(6));
         summary.setOnClickListener(view -> {
             if (!terminalExpandedMessages.add(groupKey)) {
                 terminalExpandedMessages.remove(groupKey);
@@ -2112,7 +2114,7 @@ public final class MainActivity extends Activity {
             for (ConversationMessage message : tools) {
                 LinearLayout detail = new LinearLayout(this);
                 detail.setOrientation(LinearLayout.VERTICAL);
-                detail.setPadding(dp(14), dp(3), dp(2), dp(7));
+                detail.setPadding(dp(18), dp(3), dp(10), dp(7));
                 TextView title = bodyText(conversationToolTitle(message));
                 title.setTextColor(COLOR_ACCENT_WARM);
                 title.setTextSize(9);
@@ -2188,10 +2190,16 @@ public final class MainActivity extends Activity {
         terminalLiveOutputText.setTextColor(COLOR_TEXT_MUTED);
         terminalLiveOutputText.setTextSize(11);
         terminalLiveOutputText.setTypeface(Typeface.MONOSPACE);
+        terminalLiveOutputText.setIncludeFontPadding(false);
+        terminalLiveOutputText.setHorizontallyScrolling(true);
+        terminalLiveOutputText.setLineSpacing(0, 1.05f);
+        terminalLiveOutputText.setBackgroundColor(COLOR_TERMINAL_BG);
         terminalLiveOutputText.setPadding(0, dp(5), 0, 0);
         terminalLiveOutputText.setMovementMethod(LinkMovementMethod.getInstance());
         terminalLiveOutputText.setHighlightColor(Color.TRANSPARENT);
         terminalLiveOutputText.setTextIsSelectable(true);
+        terminalLiveOutputText.addOnLayoutChangeListener((view, left, top, right, bottom,
+                oldLeft, oldTop, oldRight, oldBottom) -> resizeTerminalToViewport(false));
         panel.addView(terminalLiveOutputText, matchWrap());
         return panel;
     }
@@ -3559,18 +3567,23 @@ public final class MainActivity extends Activity {
         if (terminalText == null || terminalScroll == null) {
             return;
         }
-        int width = terminalScroll.getWidth();
+        TextView viewportText = terminalViewMode == TERMINAL_VIEW_CHAT && terminalLiveOutputText != null
+                ? terminalLiveOutputText : terminalText;
+        int width = viewportText.getWidth();
+        if (width <= 0) {
+            width = terminalScroll.getWidth();
+        }
         int height = terminalScroll.getHeight();
         if (width <= 0 || height <= 0) {
             return;
         }
-        int horizontalPadding = terminalText.getPaddingLeft() + terminalText.getPaddingRight();
-        int verticalPadding = terminalText.getPaddingTop() + terminalText.getPaddingBottom();
-        float charWidth = terminalText.getPaint().measureText("0000000000") / 10f;
+        int horizontalPadding = viewportText.getPaddingLeft() + viewportText.getPaddingRight();
+        int verticalPadding = viewportText.getPaddingTop() + viewportText.getPaddingBottom();
+        float charWidth = viewportText.getPaint().measureText("0000000000") / 10f;
         if (charWidth <= 0f) {
             charWidth = dp(8);
         }
-        int lineHeight = terminalText.getLineHeight();
+        int lineHeight = viewportText.getLineHeight();
         if (lineHeight <= 0) {
             lineHeight = dp(16);
         }
@@ -3988,7 +4001,12 @@ public final class MainActivity extends Activity {
         input.setHintTextColor(COLOR_TEXT_DIM);
         input.setTextSize(13);
         input.setPadding(dp(8), dp(5), dp(8), dp(5));
-        input.setBackground(inputBackground());
+        input.setBackground(composerInputBackground());
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            GradientDrawable cursor = rounded(COLOR_ACCENT, 1, Color.TRANSPARENT, 0);
+            cursor.setSize(dp(2), dp(20));
+            input.setTextCursorDrawable(cursor);
+        }
     }
 
     private Button compactButton(String label, View.OnClickListener listener) {
@@ -4019,6 +4037,14 @@ public final class MainActivity extends Activity {
 
     private GradientDrawable inputBackground() {
         return rounded(COLOR_FIELD, 8, COLOR_BORDER, 1);
+    }
+
+    private StateListDrawable composerInputBackground() {
+        StateListDrawable states = new StateListDrawable();
+        states.addState(new int[]{android.R.attr.state_focused},
+                rounded(COLOR_CARD_ALT, 7, COLOR_ACCENT, 1));
+        states.addState(new int[]{}, rounded(COLOR_CARD, 7, COLOR_BORDER, 1));
+        return states;
     }
 
     private GradientDrawable rounded(int color, int radiusDp, int strokeColor, int strokeDp) {
