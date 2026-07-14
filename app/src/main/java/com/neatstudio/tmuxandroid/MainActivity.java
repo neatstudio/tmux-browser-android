@@ -1734,11 +1734,11 @@ public final class MainActivity extends Activity {
         terminalText.setLineSpacing(0, 1.05f);
         terminalText.setGravity(Gravity.BOTTOM | Gravity.START);
         terminalText.setTextIsSelectable(terminalSelectionEnabled);
-        terminalText.setPadding(dp(2), dp(8), dp(2), dp(8));
+        terminalText.setPadding(dp(2), dp(8), dp(2), 0);
         terminalText.setBackgroundColor(COLOR_TERMINAL_BG);
         terminalChatList = new LinearLayout(this);
         terminalChatList.setOrientation(LinearLayout.VERTICAL);
-        terminalChatList.setPadding(0, dp(12), 0, dp(18));
+        terminalChatList.setPadding(0, dp(12), 0, 0);
         terminalChatList.addView(projectStateText("Loading conversation..."), matchWrap());
         showTerminalView(terminalViewMode, false);
         terminalScroll.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
@@ -2159,7 +2159,7 @@ public final class MainActivity extends Activity {
     private View conversationLiveTerminalPanel() {
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(2), dp(10), dp(2), dp(8));
+        panel.setPadding(dp(2), dp(10), dp(2), 0);
 
         LinearLayout heading = new LinearLayout(this);
         heading.setOrientation(LinearLayout.HORIZONTAL);
@@ -2193,6 +2193,7 @@ public final class MainActivity extends Activity {
         terminalLiveOutputText.setIncludeFontPadding(false);
         terminalLiveOutputText.setHorizontallyScrolling(true);
         terminalLiveOutputText.setLineSpacing(0, 1.05f);
+        terminalLiveOutputText.setGravity(Gravity.BOTTOM | Gravity.START);
         terminalLiveOutputText.setBackgroundColor(COLOR_TERMINAL_BG);
         terminalLiveOutputText.setPadding(0, dp(5), 0, 0);
         terminalLiveOutputText.setMovementMethod(LinkMovementMethod.getInstance());
@@ -3590,6 +3591,10 @@ public final class MainActivity extends Activity {
         int usableWidth = Math.max(1, width - horizontalPadding);
         int cols = clamp((int) Math.floor(usableWidth / charWidth), MIN_TERMINAL_COLS, MAX_TERMINAL_COLS);
         int rows = clamp((height - verticalPadding) / lineHeight, MIN_TERMINAL_ROWS, MAX_TERMINAL_ROWS);
+        if (terminalLiveOutputText != null) {
+            terminalLiveOutputText.setMinHeight(rows * lineHeight);
+            terminalLiveOutputText.setGravity(Gravity.BOTTOM | Gravity.START);
+        }
         if (cols == terminalCols && rows == terminalRows && !forceSend) {
             return;
         }
