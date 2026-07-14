@@ -181,7 +181,7 @@ public final class MainActivity extends Activity {
     private float terminalFontSizeSp = 11f;
     private float terminalLineHeight = 1.05f;
     private String terminalFontFamily = "monospace";
-    private String terminalThemeId = "dark";
+    private String terminalThemeId = "graphite";
     private float terminalTouchStartY;
     private int terminalTouchStartScrollY;
     private int terminalReconnectAttempt;
@@ -2894,7 +2894,8 @@ public final class MainActivity extends Activity {
         String currentFamily = prefs.getString("terminal_font_family:" + key,
                 prefs.getString("terminal_font_family:default", "monospace"));
         String currentTheme = prefs.getString("terminal_theme:" + key,
-                prefs.getString("terminal_theme:default", "dark"));
+                prefs.getString("terminal_theme:default", "graphite"));
+        currentTheme = normalizeTerminalTheme(currentTheme);
 
         Dialog dialog = new Dialog(this);
         LinearLayout sheet = bottomSheetContent(
@@ -2947,10 +2948,10 @@ public final class MainActivity extends Activity {
         String[] selectedTheme = {currentTheme};
         LinearLayout themeRow = new LinearLayout(this);
         themeRow.setOrientation(LinearLayout.HORIZONTAL);
-        Button dark = settingChoice("Dark", "dark", selectedTheme);
-        Button oled = settingChoice("OLED", "oled", selectedTheme);
-        Button[] themeButtons = {dark, oled};
-        String[] themeValues = {"dark", "oled"};
+        Button graphite = settingChoice("Graphite", "graphite", selectedTheme);
+        Button ink = settingChoice("Ink", "ink", selectedTheme);
+        Button[] themeButtons = {graphite, ink};
+        String[] themeValues = {"graphite", "ink"};
         for (int index = 0; index < themeButtons.length; index++) {
             Button button = themeButtons[index];
             String value = themeValues[index];
@@ -3041,7 +3042,8 @@ public final class MainActivity extends Activity {
         terminalFontFamily = prefs.getString("terminal_font_family:" + key,
                 prefs.getString("terminal_font_family:default", "monospace"));
         terminalThemeId = prefs.getString("terminal_theme:" + key,
-                prefs.getString("terminal_theme:default", "dark"));
+                prefs.getString("terminal_theme:default", "graphite"));
+        terminalThemeId = normalizeTerminalTheme(terminalThemeId);
     }
 
     private void applyTerminalDisplaySettings() {
@@ -3078,7 +3080,17 @@ public final class MainActivity extends Activity {
     }
 
     private int terminalBackgroundColor() {
-        return "oled".equals(terminalThemeId) ? Color.BLACK : COLOR_TERMINAL_BG;
+        return "ink".equals(terminalThemeId) ? Color.rgb(7, 8, 10) : Color.rgb(17, 17, 17);
+    }
+
+    private String normalizeTerminalTheme(String theme) {
+        if ("oled".equals(theme)) {
+            return "ink";
+        }
+        if ("dark".equals(theme) || theme == null || theme.isEmpty()) {
+            return "graphite";
+        }
+        return theme;
     }
 
     private TextView settingValue(String text) {
