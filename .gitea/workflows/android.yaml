@@ -55,12 +55,12 @@ jobs:
 
             mkdir -p release
             ATTEMPT=1
-            while [ "${ATTEMPT}" -le 30 ]; do
+            while [ "${ATTEMPT}" -le 6 ]; do
               if curl -fsSL "${GITHUB_APK_URL}" -o release/tmux-android.apk; then
                 break
               fi
               rm -f release/tmux-android.apk
-              echo "Waiting for GitHub release ${TAG} (${ATTEMPT}/30)..."
+              echo "Waiting for GitHub release ${TAG} (${ATTEMPT}/6)..."
               sleep 10
               ATTEMPT=$((ATTEMPT + 1))
             done
