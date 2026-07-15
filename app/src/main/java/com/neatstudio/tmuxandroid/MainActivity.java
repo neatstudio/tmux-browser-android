@@ -27,6 +27,7 @@ import android.text.TextUtils;
 import android.text.InputType;
 import android.text.method.LinkMovementMethod;
 import android.view.Gravity;
+import android.view.DragEvent;
 import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -595,25 +596,11 @@ public final class MainActivity extends Activity {
         titleBlock.addView(title);
         row.addView(titleBlock, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
-        row.addView(primaryButton("＋ Session", view -> promptCreateSession()), new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                dp(38)
-        ));
+        addHeaderTool(row, "⚙", "Session display settings", view -> promptSessionSettings(""));
+        addHeaderTool(row, "↻", "Refresh sessions", view -> refreshSessions());
+        addHeaderTool(row, "＋", "Create session", view -> promptCreateSession());
+        addHeaderTool(row, "▰", "Manage groups", view -> showGroupManagement());
         header.addView(row, matchWrap());
-
-        LinearLayout utilities = new LinearLayout(this);
-        utilities.setOrientation(LinearLayout.HORIZONTAL);
-        utilities.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        Button display = terminalToolButton("⚙", view -> promptSessionSettings(""));
-        display.setContentDescription("Session display settings");
-        utilities.addView(display);
-        Button refresh = compactButton("↻ Refresh", view -> refreshSessions());
-        refresh.setContentDescription("Refresh sessions");
-        utilities.addView(refresh);
-        Button addGroup = compactButton("＋ New group", view -> promptCreateKanbanProject());
-        addGroup.setContentDescription("Add group");
-        utilities.addView(addGroup);
-        header.addView(utilities, spacedMatchWrap(8, 0));
         return header;
     }
 
@@ -788,12 +775,12 @@ public final class MainActivity extends Activity {
     }
 
     private void showMainNavigation() {
-        String[] items = {"Projects", "Tools", "Update", "About"};
+        String[] items = {"Sessions / groups", "Tools", "Update", "About"};
         new AppDialogBuilder()
                 .setTitle("tmuxctl")
                 .setItems(items, (dialog, which) -> {
                     if (which == 0) {
-                        renderProjectsScreen();
+                        openSessionPage();
                     } else if (which == 1) {
                         renderToolsScreen();
                     } else if (which == 2) {
@@ -839,7 +826,7 @@ public final class MainActivity extends Activity {
         ));
         content.addView(sectionTitle("Kanban / Messages"));
         content.addView(actionPanel(
-                actionButton("Projects", view -> showRaw("Kanban projects", () -> api.kanbanProjects())),
+                actionButton("Groups", view -> showRaw("Groups", () -> api.kanbanProjects())),
                 actionButton("New project", view -> promptCreateKanbanProject()),
                 actionButton("Delete project", view -> promptDeleteKanbanProject()),
                 actionButton("Remove session", view -> promptRemoveKanbanSession())
@@ -1245,7 +1232,6 @@ public final class MainActivity extends Activity {
         row.setPadding(dp(8), dp(5), dp(8), dp(5));
         row.addView(navButton(PAGE_SERVERS, selected, view -> renderServerScreen()));
         row.addView(navButton(PAGE_SESSIONS, selected, view -> openSessionPage()));
-        row.addView(navButton(PAGE_PROJECTS, selected, view -> renderProjectsScreen()));
         row.addView(navButton(PAGE_TOOLS, selected, view -> renderToolsScreen()));
         row.addView(navButton(PAGE_UPDATE, selected, view -> renderUpdateScreen()));
         row.addView(navButton(PAGE_ABOUT, selected, view -> renderAboutScreen()));
@@ -1498,6 +1484,7 @@ public final class MainActivity extends Activity {
     private View sessionGroupSection(String name, List<SessionSummary> sessions, boolean project) {
         LinearLayout section = new LinearLayout(this);
         section.setOrientation(LinearLayout.VERTICAL);
+        section.setOnDragListener((view, event) -> handleSessionDrop(section, name, project, event));
 
         LinearLayout heading = new LinearLayout(this);
         heading.setOrientation(LinearLayout.HORIZONTAL);
@@ -1520,6 +1507,10 @@ public final class MainActivity extends Activity {
         count.setTextSize(11);
         count.setTypeface(Typeface.MONOSPACE);
         heading.addView(count);
+        Button actions = terminalToolButton("⋮", view -> showGroupActions(name, project));
+        actions.setContentDescription("Actions for " + name);
+        heading.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
+        heading.addView(actions);
         section.addView(heading);
 
         if (sessions.isEmpty()) {
@@ -1531,11 +1522,77 @@ public final class MainActivity extends Activity {
             section.addView(empty, matchWrap());
         } else {
             for (SessionSummary session : sessions) {
-                section.addView(sessionRow(session), spacedMatchWrap(0, 10));
+                section.addView(sessionRow(session, project ? name : null), spacedMatchWrap(0, 10));
             }
         }
 
         return section;
+    }
+
+    private boolean handleSessionDrop(
+            LinearLayout section,
+            String targetGroup,
+            boolean targetIsGroup,
+            DragEvent event
+    ) {
+        if (!(event.getLocalState() instanceof SessionDrag)) {
+            return false;
+        }
+        if (event.getAction() == DragEvent.ACTION_DRAG_ENTERED) {
+            section.setBackground(rounded(COLOR_CARD_ALT, 8, COLOR_ACCENT, 1));
+            return true;
+        }
+        if (event.getAction() == DragEvent.ACTION_DRAG_EXITED
+                || event.getAction() == DragEvent.ACTION_DRAG_ENDED) {
+            section.setBackgroundColor(Color.TRANSPARENT);
+            return true;
+        }
+        if (event.getAction() == DragEvent.ACTION_DROP) {
+            section.setBackgroundColor(Color.TRANSPARENT);
+            SessionDrag drag = (SessionDrag) event.getLocalState();
+            moveSessionBetweenGroups(drag.sessionName, drag.sourceGroup, targetIsGroup ? targetGroup : null);
+            return true;
+        }
+        return true;
+    }
+
+    private void showGroupActions(String groupName, boolean project) {
+        String[] items = project
+                ? new String[]{"Add session", "Messages", "Delete group"}
+                : new String[]{"Create group", "Refresh sessions"};
+        new AppDialogBuilder()
+                .setTitle(groupName)
+                .setItems(items, (dialog, which) -> {
+                    if (!project) {
+                        if (which == 0) {
+                            promptCreateKanbanProject();
+                        } else {
+                            refreshSessions();
+                        }
+                    } else if (which == 0) {
+                        promptAddKanbanSessionToProject(groupName);
+                    } else if (which == 1) {
+                        showRaw("Group messages: " + groupName, () -> api.groupMessages(groupName));
+                    } else {
+                        runApiAction("Delete group", () -> api.deleteKanbanProject(groupName));
+                    }
+                })
+                .show();
+    }
+
+    private void showGroupManagement() {
+        new AppDialogBuilder()
+                .setTitle("Groups")
+                .setItems(new String[]{"Create group", "Delete group", "Group messages"}, (dialog, which) -> {
+                    if (which == 0) {
+                        promptCreateKanbanProject();
+                    } else if (which == 1) {
+                        promptDeleteKanbanProject();
+                    } else {
+                        promptGroupMessages();
+                    }
+                })
+                .show();
     }
 
     private void refreshProjects() {
@@ -1685,7 +1742,7 @@ public final class MainActivity extends Activity {
             list.addView(empty);
         }
         for (SessionSummary session : sessions) {
-            list.addView(sessionRow(session), spacedMatchWrap(0, 10));
+            list.addView(sessionRow(session, null), spacedMatchWrap(0, 10));
         }
         if (sessionSummaryText != null) {
             sessionSummaryText.setText("Server: " + getServerUrl() + "\nSessions: " + sessions.size());
@@ -1693,7 +1750,7 @@ public final class MainActivity extends Activity {
         setStatus("Loaded " + sessions.size() + " sessions");
     }
 
-    private View sessionRow(SessionSummary session) {
+    private View sessionRow(SessionSummary session, String sourceGroup) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
@@ -1703,7 +1760,13 @@ public final class MainActivity extends Activity {
         row.setOnClickListener(view -> openTerminal(session.name));
         row.setOnLongClickListener(view -> {
             view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
-            showSessionActions(session.name);
+            ClipData data = ClipData.newPlainText("tmux-session", session.name);
+            view.startDragAndDrop(
+                    data,
+                    new View.DragShadowBuilder(view),
+                    new SessionDrag(session.name, sourceGroup),
+                    0
+            );
             return true;
         });
 
@@ -1757,7 +1820,7 @@ public final class MainActivity extends Activity {
         row.addView(textBlock, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
         Button move = terminalToolButton("⇄", view -> promptAddKanbanSession(session.name));
-        move.setContentDescription("Move " + session.name + " to project");
+        move.setContentDescription("Move " + session.name + " to group");
         row.addView(move);
         Button kill = terminalToolButton("×", view -> confirmKill(session.name));
         kill.setContentDescription("Kill session");
@@ -3055,7 +3118,103 @@ public final class MainActivity extends Activity {
     }
 
     private void promptAddKanbanSession(String sessionName) {
-        promptText("Add to kanban project", "project", "", projectName -> api.addKanbanSession(projectName, sessionName));
+        progressBar.setVisibility(View.VISIBLE);
+        executor.execute(() -> {
+            try {
+                List<String> groups = kanbanGroupNames(api.kanbanProjects());
+                runOnUiThread(() -> {
+                    progressBar.setVisibility(View.GONE);
+                    List<String> choices = new ArrayList<>();
+                    choices.add("Ungrouped");
+                    choices.addAll(groups);
+                    choices.add("＋ Create new group");
+                    new AppDialogBuilder()
+                            .setTitle("Move " + sessionName)
+                            .setItems(choices.toArray(new String[0]), (dialog, which) -> {
+                                if (which == 0) {
+                                    moveSessionToGroup(sessionName, null);
+                                } else if (which == choices.size() - 1) {
+                                    promptCreateGroupForSession(sessionName);
+                                } else {
+                                    moveSessionToGroup(sessionName, choices.get(which));
+                                }
+                            })
+                            .show();
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    progressBar.setVisibility(View.GONE);
+                    showMessage("Group load failed: " + error.getMessage());
+                });
+            }
+        });
+    }
+
+    private List<String> kanbanGroupNames(String projectsText) throws Exception {
+        List<String> groups = new ArrayList<>();
+        JSONObject object = new JSONObject(projectsText == null || projectsText.isEmpty() ? "{}" : projectsText);
+        JSONArray projects = object.optJSONArray("projects");
+        for (int index = 0; projects != null && index < projects.length(); index++) {
+            JSONObject project = projects.optJSONObject(index);
+            if (project != null && !project.optString("name").isEmpty()) {
+                groups.add(project.optString("name"));
+            }
+        }
+        return groups;
+    }
+
+    private void promptCreateGroupForSession(String sessionName) {
+        promptText("Create group for " + sessionName, "group name", "", groupName -> {
+            if (groupName.isEmpty()) {
+                throw new IllegalArgumentException("Group name is required");
+            }
+            api.createKanbanProject(groupName, "~", "");
+            api.addKanbanSession(groupName, sessionName);
+        });
+    }
+
+    private void moveSessionToGroup(String sessionName, String targetGroup) {
+        runApiAction("Move session", () -> {
+            JSONObject object = new JSONObject(api.kanbanProjects());
+            JSONArray projects = object.optJSONArray("projects");
+            boolean alreadyInTarget = false;
+            for (int projectIndex = 0; projects != null && projectIndex < projects.length(); projectIndex++) {
+                JSONObject project = projects.optJSONObject(projectIndex);
+                if (project == null) {
+                    continue;
+                }
+                String projectName = project.optString("name");
+                JSONArray agents = project.optJSONArray("agents");
+                for (int agentIndex = 0; agents != null && agentIndex < agents.length(); agentIndex++) {
+                    if (!sessionName.equals(agentSessionName(agents.optJSONObject(agentIndex)))) {
+                        continue;
+                    }
+                    if (projectName.equals(targetGroup)) {
+                        alreadyInTarget = true;
+                    } else {
+                        api.removeKanbanSession(projectName, sessionName, false);
+                    }
+                }
+            }
+            if (targetGroup != null && !alreadyInTarget) {
+                api.addKanbanSession(targetGroup, sessionName);
+            }
+        });
+    }
+
+    private void moveSessionBetweenGroups(String sessionName, String sourceGroup, String targetGroup) {
+        if ((sourceGroup == null && targetGroup == null)
+                || (sourceGroup != null && sourceGroup.equals(targetGroup))) {
+            return;
+        }
+        runApiAction("Move session", () -> {
+            if (sourceGroup != null) {
+                api.removeKanbanSession(sourceGroup, sessionName, false);
+            }
+            if (targetGroup != null) {
+                api.addKanbanSession(targetGroup, sessionName);
+            }
+        });
     }
 
     private void promptAddKanbanSessionToProject(String projectName) {
@@ -5307,6 +5466,16 @@ public final class MainActivity extends Activity {
 
     private interface IntValueListener {
         void onValue(int value);
+    }
+
+    private static final class SessionDrag {
+        final String sessionName;
+        final String sourceGroup;
+
+        SessionDrag(String sessionName, String sourceGroup) {
+            this.sessionName = sessionName;
+            this.sourceGroup = sourceGroup;
+        }
     }
 
     private static final class SheetAction {
