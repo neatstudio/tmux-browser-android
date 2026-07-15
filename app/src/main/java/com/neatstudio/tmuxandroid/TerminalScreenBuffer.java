@@ -120,10 +120,22 @@ final class TerminalScreenBuffer {
     }
 
     CharSequence render() {
+        return renderRows(0, rows);
+    }
+
+    CharSequence renderBody() {
+        return renderRows(0, Math.max(0, rows - 1));
+    }
+
+    CharSequence renderStatusLine() {
+        return renderRows(Math.max(0, rows - 1), rows);
+    }
+
+    private CharSequence renderRows(int startRow, int endRow) {
         SpannableStringBuilder output = new SpannableStringBuilder();
-        for (int row = 0; row < rows; row++) {
+        for (int row = startRow; row < endRow; row++) {
             appendRow(output, row);
-            if (row + 1 < rows) {
+            if (row + 1 < endRow) {
                 output.append('\n');
             }
         }

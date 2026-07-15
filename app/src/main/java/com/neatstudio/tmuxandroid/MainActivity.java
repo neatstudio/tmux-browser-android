@@ -138,6 +138,7 @@ public final class MainActivity extends Activity {
     private LinearLayout projectList;
     private LinearLayout sessionGroupList;
     private TextView terminalText;
+    private TextView terminalStatusLineText;
     private TextView terminalMetaText;
     private TextView terminalConnectionText;
     private ScrollView terminalScroll;
@@ -167,8 +168,6 @@ public final class MainActivity extends Activity {
     private final Set<String> serverCountFailures = new HashSet<>();
     private TerminalScreenBuffer terminalScreen = new TerminalScreenBuffer(DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS);
     private final StringBuilder queuedTerminalInput = new StringBuilder();
-    private final Set<String> terminalExpandedBlocks = new HashSet<>();
-    private final Set<String> terminalExpandedMessages = new HashSet<>();
     private final List<ConversationMessage> terminalConversationMessages = new ArrayList<>();
     private boolean terminalConnected;
     private boolean terminalConnecting;
@@ -1861,8 +1860,6 @@ public final class MainActivity extends Activity {
         terminalFollowOutput = true;
         terminalKeyPage = 0;
         terminalHistoryOffset = 0;
-        terminalExpandedBlocks.clear();
-        terminalExpandedMessages.clear();
         terminalConversationMessages.clear();
         terminalLiveStatusText = null;
         terminalLiveOutputText = null;
@@ -1912,6 +1909,20 @@ public final class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
                 1
+        ));
+        terminalStatusLineText = new TextView(this);
+        terminalStatusLineText.setTextColor(COLOR_TEXT);
+        terminalStatusLineText.setTextSize(terminalFontSizeSp);
+        terminalStatusLineText.setTypeface(terminalTypeface());
+        terminalStatusLineText.setIncludeFontPadding(false);
+        terminalStatusLineText.setSingleLine(true);
+        terminalStatusLineText.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
+        terminalStatusLineText.setHorizontallyScrolling(true);
+        terminalStatusLineText.setPadding(dp(2), 0, dp(2), 0);
+        terminalStatusLineText.setBackgroundColor(terminalBackgroundColor());
+        root.addView(terminalStatusLineText, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(22)
         ));
         terminalAccessoryBar = createAccessoryBar();
         root.addView(terminalAccessoryBar, new LinearLayout.LayoutParams(
@@ -2252,40 +2263,27 @@ public final class MainActivity extends Activity {
     private View conversationToolGroup(List<ConversationMessage> tools) {
         LinearLayout group = new LinearLayout(this);
         group.setOrientation(LinearLayout.VERTICAL);
-        String firstId = tools.isEmpty() ? "empty" : tools.get(0).messageId;
-        String lastId = tools.isEmpty() ? "empty" : tools.get(tools.size() - 1).messageId;
-        String groupKey = "tools:" + firstId + ":" + lastId;
-        boolean expanded = terminalExpandedMessages.contains(groupKey);
         String firstTitle = tools.isEmpty() ? "Tool activity" : conversationToolTitle(tools.get(0));
         TextView summary = new TextView(this);
-        summary.setText((expanded ? "▼ " : "▶ ") + tools.size() + " tool "
+        summary.setText(tools.size() + " tool "
                 + (tools.size() == 1 ? "activity" : "activities") + " · " + compactLabel(firstTitle, 44));
         summary.setTextColor(COLOR_ACCENT_WARM);
         summary.setTextSize(10);
         summary.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         summary.setPadding(dp(10), dp(6), dp(10), dp(6));
-        summary.setOnClickListener(view -> {
-            if (!terminalExpandedMessages.add(groupKey)) {
-                terminalExpandedMessages.remove(groupKey);
-            }
-            renderTerminalConversation();
-        });
-        summary.setContentDescription((expanded ? "Collapse " : "Expand ") + tools.size() + " tool activities");
         group.addView(summary, matchWrap());
 
-        if (expanded) {
-            for (ConversationMessage message : tools) {
-                LinearLayout detail = new LinearLayout(this);
-                detail.setOrientation(LinearLayout.VERTICAL);
-                detail.setPadding(dp(18), dp(3), dp(10), dp(7));
-                TextView title = bodyText(conversationToolTitle(message));
-                title.setTextColor(COLOR_ACCENT_WARM);
-                title.setTextSize(9);
-                title.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-                detail.addView(title, matchWrap());
-                detail.addView(conversationContent(message, true), matchWrap());
-                group.addView(detail, matchWrap());
-            }
+        for (ConversationMessage message : tools) {
+            LinearLayout detail = new LinearLayout(this);
+            detail.setOrientation(LinearLayout.VERTICAL);
+            detail.setPadding(dp(18), dp(3), dp(10), dp(7));
+            TextView title = bodyText(conversationToolTitle(message));
+            title.setTextColor(COLOR_ACCENT_WARM);
+            title.setTextSize(9);
+            title.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+            detail.addView(title, matchWrap());
+            detail.addView(conversationContent(message, true), matchWrap());
+            group.addView(detail, matchWrap());
         }
 
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
@@ -2379,14 +2377,8 @@ public final class MainActivity extends Activity {
                 : connected ? "● live" : "● " + defaultValue(socket, "connecting"));
         terminalLiveStatusText.setTextColor(terminalHistoryOffset > 0 ? COLOR_ACCENT_WARM : connected ? COLOR_SUCCESS
                 : socket.contains("error") || socket.contains("disconnected") ? COLOR_DANGER : COLOR_ACCENT_WARM);
-        terminalLiveOutputText.setMovementMethod(LinkMovementMethod.getInstance());
-        terminalLiveOutputText.setHighlightColor(Color.TRANSPARENT);
-        terminalLiveOutputText.setText(terminalScreen.renderFocused(terminalExpandedBlocks, key -> {
-            if (!terminalExpandedBlocks.add(key)) {
-                terminalExpandedBlocks.remove(key);
-            }
-            renderTerminalNow();
-        }));
+        terminalLiveOutputText.setMovementMethod(null);
+        terminalLiveOutputText.setText(terminalScreen.renderBody());
     }
 
     private void updateTerminalMeta() {
@@ -2608,9 +2600,7 @@ public final class MainActivity extends Activity {
 
     private void clearTerminalHistory() {
         terminalScreen.clear();
-        if (terminalText != null) {
-            terminalText.setText("");
-        }
+        renderTerminalNow();
         if (terminalSocket != null) {
             terminalSocket.clearHistory();
         }
@@ -3059,6 +3049,11 @@ public final class MainActivity extends Activity {
             terminalLiveOutputText.setTypeface(typeface);
             terminalLiveOutputText.setLineSpacing(0, terminalLineHeight);
             terminalLiveOutputText.setBackgroundColor(terminalBackgroundColor());
+        }
+        if (terminalStatusLineText != null) {
+            terminalStatusLineText.setTextSize(terminalFontSizeSp);
+            terminalStatusLineText.setTypeface(typeface);
+            terminalStatusLineText.setBackgroundColor(terminalBackgroundColor());
         }
         if (terminalScroll != null) {
             terminalScroll.setBackgroundColor(terminalBackgroundColor());
@@ -4236,18 +4231,10 @@ public final class MainActivity extends Activity {
             return;
         }
         lastTerminalRenderMs = System.currentTimeMillis();
-        if (terminalViewMode == TERMINAL_VIEW_CHAT) {
-            terminalText.setMovementMethod(LinkMovementMethod.getInstance());
-            terminalText.setHighlightColor(Color.TRANSPARENT);
-            terminalText.setText(terminalScreen.renderFocused(terminalExpandedBlocks, key -> {
-                if (!terminalExpandedBlocks.add(key)) {
-                    terminalExpandedBlocks.remove(key);
-                }
-                renderTerminalNow();
-            }));
-        } else {
-            terminalText.setMovementMethod(null);
-            terminalText.setText(terminalScreen.render());
+        terminalText.setMovementMethod(null);
+        terminalText.setText(terminalScreen.renderBody());
+        if (terminalStatusLineText != null) {
+            terminalStatusLineText.setText(terminalScreen.renderStatusLine());
         }
         updateTerminalLivePanel();
         if (terminalFollowOutput) {
