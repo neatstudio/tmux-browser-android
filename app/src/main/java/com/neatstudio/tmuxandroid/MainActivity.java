@@ -297,7 +297,10 @@ public final class MainActivity extends Activity {
                 serverUrls.size() + " nodes",
                 "Servers",
                 "＋ Add",
-                view -> promptCustomServer()
+                view -> promptCustomServer(),
+                "⋮",
+                "More navigation",
+                view -> showMainNavigation()
         ));
         for (String url : serverUrls) {
             content.addView(serverProfileCard(url), spacedHeight(72, 0, 12));
@@ -493,6 +496,18 @@ public final class MainActivity extends Activity {
             String actionLabel,
             View.OnClickListener action
     ) {
+        return createPageHeader(eyebrow, titleText, actionLabel, action, null, null, null);
+    }
+
+    private View createPageHeader(
+            String eyebrow,
+            String titleText,
+            String actionLabel,
+            View.OnClickListener action,
+            String utilityLabel,
+            String utilityDescription,
+            View.OnClickListener utilityAction
+    ) {
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.BOTTOM);
@@ -520,6 +535,13 @@ public final class MainActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 dp(38)
         ));
+        if (utilityAction != null) {
+            Button utility = terminalToolButton(utilityLabel, utilityAction);
+            utility.setContentDescription(utilityDescription);
+            LinearLayout.LayoutParams utilityParams = new LinearLayout.LayoutParams(dp(38), dp(38));
+            utilityParams.leftMargin = dp(6);
+            header.addView(utility, utilityParams);
+        }
         return header;
     }
 
@@ -529,7 +551,6 @@ public final class MainActivity extends Activity {
         row.setPadding(0, dp(4), 0, 0);
         row.addView(compactButton("Probe all", view -> probeServerProfiles()));
         row.addView(compactButton("Update", view -> renderUpdateScreen()));
-        row.addView(compactButton("More", view -> showMainNavigation()));
         return row;
     }
 
