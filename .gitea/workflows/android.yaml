@@ -95,7 +95,7 @@ jobs:
                 "${API_ROOT}/releases/tags/${TAG}" \
                 -o /tmp/gitea-release.json
             fi
-            RELEASE_ID="$(sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p' /tmp/gitea-release.json | head -1)"
+            RELEASE_ID="$(sed -n 's/^{"id":\([0-9][0-9]*\),.*/\1/p' /tmp/gitea-release.json | head -1)"
             if [ -z "${RELEASE_ID}" ]; then
               echo "Cannot resolve Gitea release id for ${TAG}." >&2
               exit 1
@@ -248,7 +248,7 @@ jobs:
               "${API_ROOT}/releases/tags/${TAG}" \
               -o /tmp/gitea-release.json
           fi
-          RELEASE_ID="$(sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p' /tmp/gitea-release.json | head -1)"
+          RELEASE_ID="$(sed -n 's/^{"id":\([0-9][0-9]*\),.*/\1/p' /tmp/gitea-release.json | head -1)"
           if [ -z "${RELEASE_ID}" ]; then
             echo "Cannot resolve Gitea release id." >&2
             cat /tmp/gitea-release.json >&2
