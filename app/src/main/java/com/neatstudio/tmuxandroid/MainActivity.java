@@ -140,6 +140,8 @@ public final class MainActivity extends Activity {
     private TextView terminalMetaText;
     private TextView terminalConnectionText;
     private ScrollView terminalScroll;
+    private LinearLayout agentActivityList;
+    private Dialog agentActivityDialog;
     private LinearLayout terminalChatList;
     private TextView terminalLiveStatusText;
     private TextView terminalLiveOutputText;
@@ -167,6 +169,7 @@ public final class MainActivity extends Activity {
     private TerminalScreenBuffer terminalScreen = new TerminalScreenBuffer(DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS);
     private final StringBuilder queuedTerminalInput = new StringBuilder();
     private final List<ConversationMessage> terminalConversationMessages = new ArrayList<>();
+    private final Set<String> expandedAgentActivity = new HashSet<>();
     private boolean terminalConnected;
     private boolean terminalConnecting;
     private boolean terminalRenderPending;
@@ -1845,6 +1848,9 @@ public final class MainActivity extends Activity {
     }
 
     private void openTerminal(String sessionName) {
+        if (agentActivityDialog != null) {
+            agentActivityDialog.dismiss();
+        }
         closeTerminalSocket();
         activeSessionName = sessionName;
         loadTerminalDisplaySettings(sessionName);
@@ -1858,6 +1864,10 @@ public final class MainActivity extends Activity {
         terminalFollowOutput = true;
         terminalKeyPage = 0;
         terminalHistoryOffset = 0;
+        terminalConversationMessages.clear();
+        expandedAgentActivity.clear();
+        agentActivityList = null;
+        agentActivityDialog = null;
         terminalImagePath = "";
         terminalImagePreviewBar = null;
         terminalImagePreview = null;
@@ -2094,6 +2104,200 @@ public final class MainActivity extends Activity {
                 });
             }
         });
+    }
+
+    private void showAgentActivity() {
+        String sessionName = activeSessionName;
+        if (sessionName == null || sessionName.isEmpty()) {
+            showMessage("Open a terminal before viewing agent activity");
+            return;
+        }
+        if (agentActivityDialog != null && agentActivityDialog.isShowing()) {
+            return;
+        }
+        Dialog dialog = new Dialog(this);
+        LinearLayout sheet = bottomSheetContent(dialog, "Agent activity", compactLabel(sessionName, 42));
+        Button refresh = compactButton("Refresh", view -> refreshAgentActivity(sessionName));
+        refresh.setContentDescription("Refresh agent activity");
+        sheet.addView(refresh, spacedMatchWrap(0, 10));
+
+        agentActivityList = new LinearLayout(this);
+        agentActivityList.setOrientation(LinearLayout.VERTICAL);
+        agentActivityList.addView(projectStateText("Loading agent activity..."), matchWrap());
+        sheet.addView(agentActivityList, matchWrap());
+        agentActivityDialog = dialog;
+        dialog.setOnDismissListener(ignored -> {
+            if (agentActivityDialog == dialog) {
+                agentActivityDialog = null;
+                agentActivityList = null;
+            }
+        });
+        showBottomSheet(dialog, sheet, null);
+        refreshAgentActivity(sessionName);
+    }
+
+    private void refreshAgentActivity(String sessionName) {
+        executor.execute(() -> {
+            try {
+                JSONObject rootObject = new JSONObject(api.timeline(200));
+                JSONArray events = rootObject.optJSONArray("events");
+                List<ConversationMessage> loaded = new ArrayList<>();
+                for (int index = 0; events != null && index < events.length(); index++) {
+                    JSONObject event = events.optJSONObject(index);
+                    if (event != null
+                            && "conversation-message".equals(event.optString("type"))
+                            && sessionName.equals(event.optString("sessionName"))) {
+                        loaded.add(ConversationMessage.fromJson(event));
+                    }
+                }
+                Collections.sort(loaded, (left, right) -> left.createdAt.compareTo(right.createdAt));
+                runOnUiThread(() -> {
+                    if (!sessionName.equals(activeSessionName)) {
+                        return;
+                    }
+                    terminalConversationMessages.clear();
+                    terminalConversationMessages.addAll(loaded);
+                    renderAgentActivity();
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    if (sessionName.equals(activeSessionName) && agentActivityList != null) {
+                        agentActivityList.removeAllViews();
+                        agentActivityList.addView(projectStateText("Activity unavailable\n" + error.getMessage()), matchWrap());
+                    }
+                });
+            }
+        });
+    }
+
+    private void upsertAgentActivity(ConversationMessage message) {
+        if (message.sessionName.isEmpty() || !message.sessionName.equals(activeSessionName)) {
+            return;
+        }
+        if (!message.local && "user".equals(message.role)) {
+            for (int index = terminalConversationMessages.size() - 1; index >= 0; index--) {
+                ConversationMessage existing = terminalConversationMessages.get(index);
+                if (existing.local && existing.content.equals(message.content)) {
+                    terminalConversationMessages.remove(index);
+                    break;
+                }
+            }
+        }
+        for (int index = 0; index < terminalConversationMessages.size(); index++) {
+            if (terminalConversationMessages.get(index).messageId.equals(message.messageId)) {
+                terminalConversationMessages.set(index, message);
+                renderAgentActivity();
+                return;
+            }
+        }
+        terminalConversationMessages.add(message);
+        Collections.sort(terminalConversationMessages,
+                (left, right) -> left.createdAt.compareTo(right.createdAt));
+        renderAgentActivity();
+    }
+
+    private void renderAgentActivity() {
+        if (agentActivityList == null) {
+            return;
+        }
+        agentActivityList.removeAllViews();
+        if (terminalConversationMessages.isEmpty()) {
+            TextView empty = bodyText("No structured agent activity yet");
+            empty.setPadding(dp(8), dp(18), dp(8), dp(18));
+            agentActivityList.addView(empty, matchWrap());
+            return;
+        }
+        for (ConversationMessage message : terminalConversationMessages) {
+            agentActivityList.addView(isAgentProcessNoise(message)
+                    ? agentProcessRow(message) : agentMessageRow(message), spacedMatchWrap(0, 6));
+        }
+    }
+
+    private boolean isAgentProcessNoise(ConversationMessage message) {
+        if ("tool".equals(message.role)
+                || "tool".equals(message.contentType)
+                || "command".equals(message.contentType)) {
+            return true;
+        }
+        String text = message.content.trim()
+                .replaceFirst("^[•●]\\s*", "")
+                .toLowerCase(java.util.Locale.ROOT);
+        return text.startsWith("ran ")
+                || text.startsWith("explored")
+                || text.startsWith("viewed image")
+                || text.startsWith("waiting for agent")
+                || text.startsWith("waiting for agents")
+                || text.startsWith("searched ")
+                || text.startsWith("read ")
+                || text.startsWith("listed ")
+                || text.startsWith("downloaded ");
+    }
+
+    private View agentProcessRow(ConversationMessage message) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setPadding(dp(10), dp(7), dp(10), dp(7));
+        row.setBackground(rounded(COLOR_CARD_ALT, 6, COLOR_BORDER_SOFT, 1));
+        String key = message.messageId.isEmpty() ? message.createdAt + ":" + message.content : message.messageId;
+        boolean expanded = expandedAgentActivity.contains(key);
+        TextView summary = new TextView(this);
+        summary.setText((expanded ? "▼ " : "▶ ") + agentProcessLabel(message));
+        summary.setTextColor(COLOR_ACCENT_WARM);
+        summary.setTextSize(10);
+        summary.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        summary.setPadding(0, 0, 0, expanded ? dp(6) : 0);
+        summary.setOnClickListener(view -> {
+            if (!expandedAgentActivity.add(key)) {
+                expandedAgentActivity.remove(key);
+            }
+            renderAgentActivity();
+        });
+        summary.setContentDescription((expanded ? "Collapse " : "Expand ") + agentProcessLabel(message));
+        row.addView(summary, matchWrap());
+        if (expanded) {
+            TextView detail = agentActivityContent(message);
+            detail.setPadding(dp(8), dp(4), 0, 0);
+            row.addView(detail, matchWrap());
+        }
+        return row;
+    }
+
+    private View agentMessageRow(ConversationMessage message) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setPadding(dp(10), dp(7), dp(10), dp(7));
+        boolean user = "user".equals(message.role);
+        row.setBackground(rounded(user ? COLOR_ACCENT_DARK : COLOR_CARD, 6,
+                user ? COLOR_ACCENT_DARK : COLOR_BORDER_SOFT, 1));
+        TextView label = new TextView(this);
+        label.setText(user ? "YOU" : "AGENT");
+        label.setTextColor(user ? COLOR_ACCENT : COLOR_SUCCESS);
+        label.setTextSize(9);
+        label.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        row.addView(label, matchWrap());
+        row.addView(agentActivityContent(message), matchWrap());
+        return row;
+    }
+
+    private TextView agentActivityContent(ConversationMessage message) {
+        TextView content = new TextView(this);
+        content.setText(message.content.isEmpty() ? "(empty)" : message.content);
+        content.setTextColor(COLOR_TEXT);
+        content.setTextSize(terminalFontSizeSp);
+        content.setTypeface(terminalTypeface());
+        content.setLineSpacing(0, terminalLineHeight);
+        content.setLetterSpacing(terminalLetterSpacing);
+        content.setTextIsSelectable(true);
+        content.setPadding(0, dp(5), 0, 0);
+        return content;
+    }
+
+    private String agentProcessLabel(ConversationMessage message) {
+        String text = message.content.replaceAll("\\s+", " ").trim();
+        if (!message.toolName.isEmpty()) {
+            text = message.toolName + (text.isEmpty() ? "" : " · " + text);
+        }
+        return compactLabel(defaultValue(text, "Agent activity"), 68);
     }
 
     private void refreshTerminalConversation(String sessionName) {
@@ -2537,6 +2741,7 @@ public final class MainActivity extends Activity {
                 new SheetAction("↻", "Reconnect", () -> connectTerminal(sessionName)),
                 new SheetAction("◎", "Status", () -> showRaw("Session status", () -> api.sessionStatus(sessionName))),
                 new SheetAction("Aa", "Display", () -> promptSessionSettings("")),
+                new SheetAction("≡", "Activity", this::showAgentActivity),
                 new SheetAction("↑", "Older", () -> scrollTerminalHistory(-terminalRows)),
                 new SheetAction("↓", "Newer", () -> scrollTerminalHistory(terminalRows))
         );
@@ -3963,6 +4168,9 @@ public final class MainActivity extends Activity {
             normalized = normalized + TERMINAL_ENTER;
         }
         terminalFollowOutput = true;
+        if (activeSessionName != null) {
+            upsertAgentActivity(ConversationMessage.localUser(activeSessionName, text));
+        }
         sendTerminalInput(normalized);
         inputField.setText("");
         setStatus("Sent " + text.length() + " chars");
@@ -4781,6 +4989,7 @@ public final class MainActivity extends Activity {
                 return;
             }
             if ("conversation-message".equals(type)) {
+                upsertAgentActivity(ConversationMessage.fromJson(event));
                 return;
             }
             if ("hook-event".equals(type)) {
