@@ -79,8 +79,6 @@ public final class MainActivity extends Activity {
     private static final int STATUS_BUSY = 1;
     private static final int STATUS_SUCCESS = 2;
     private static final int STATUS_ERROR = 3;
-    private static final int TERMINAL_VIEW_CHAT = 0;
-    private static final int TERMINAL_VIEW_FULL = 1;
     private static final long TERMINAL_RENDER_INTERVAL_MS = 80L;
     private static final long[] SOCKET_RECONNECT_DELAYS_MS = {1000L, 2000L, 4000L, 8000L, 15000L};
     private static final int COLOR_APP_BG = Color.rgb(18, 20, 24);
@@ -174,11 +172,12 @@ public final class MainActivity extends Activity {
     private boolean terminalRenderPending;
     private boolean terminalSelectionEnabled;
     private boolean terminalFollowOutput = true;
-    private int terminalViewMode = TERMINAL_VIEW_CHAT;
     private int terminalKeyPage;
     private int terminalHistoryOffset;
     private float terminalFontSizeSp = 11f;
     private float terminalLineHeight = 1.05f;
+    private float terminalLetterSpacing = 0f;
+    private int terminalVerticalPaddingDp = 4;
     private String terminalFontFamily = "monospace";
     private String terminalThemeId = "graphite";
     private float terminalTouchStartY;
@@ -1849,7 +1848,6 @@ public final class MainActivity extends Activity {
         closeTerminalSocket();
         activeSessionName = sessionName;
         loadTerminalDisplaySettings(sessionName);
-        terminalViewMode = TERMINAL_VIEW_CHAT;
         projectList = null;
         sessionGroupList = null;
         terminalScreen = new TerminalScreenBuffer(DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS);
@@ -1860,9 +1858,6 @@ public final class MainActivity extends Activity {
         terminalFollowOutput = true;
         terminalKeyPage = 0;
         terminalHistoryOffset = 0;
-        terminalConversationMessages.clear();
-        terminalLiveStatusText = null;
-        terminalLiveOutputText = null;
         terminalImagePath = "";
         terminalImagePreviewBar = null;
         terminalImagePreview = null;
@@ -1890,15 +1885,15 @@ public final class MainActivity extends Activity {
         terminalText.setIncludeFontPadding(false);
         terminalText.setHorizontallyScrolling(true);
         terminalText.setLineSpacing(0, terminalLineHeight);
+        terminalText.setLetterSpacing(terminalLetterSpacing);
         terminalText.setGravity(Gravity.BOTTOM | Gravity.START);
         terminalText.setTextIsSelectable(terminalSelectionEnabled);
-        terminalText.setPadding(dp(2), dp(8), dp(2), 0);
+        terminalText.setPadding(dp(2), dp(terminalVerticalPaddingDp), dp(2), dp(terminalVerticalPaddingDp));
         terminalText.setBackgroundColor(terminalBackgroundColor());
-        terminalChatList = new LinearLayout(this);
-        terminalChatList.setOrientation(LinearLayout.VERTICAL);
-        terminalChatList.setPadding(0, dp(12), 0, 0);
-        terminalChatList.addView(projectStateText("Loading conversation..."), matchWrap());
-        showTerminalView(terminalViewMode, false);
+        terminalScroll.addView(terminalText, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+        ));
         terminalScroll.addOnLayoutChangeListener((view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
                 resizeTerminalToViewport(false));
         terminalScroll.setOnScrollChangeListener((view, scrollX, scrollY, oldScrollX, oldScrollY) ->
@@ -1918,11 +1913,13 @@ public final class MainActivity extends Activity {
         terminalStatusLineText.setSingleLine(true);
         terminalStatusLineText.setGravity(Gravity.CENTER_VERTICAL | Gravity.START);
         terminalStatusLineText.setHorizontallyScrolling(true);
-        terminalStatusLineText.setPadding(dp(2), 0, dp(2), 0);
+        terminalStatusLineText.setLetterSpacing(terminalLetterSpacing);
+        terminalStatusLineText.setPadding(dp(2), dp(terminalVerticalPaddingDp / 2), dp(2), dp(terminalVerticalPaddingDp / 2));
+        terminalStatusLineText.setMinHeight(dp(22));
         terminalStatusLineText.setBackgroundColor(terminalBackgroundColor());
         root.addView(terminalStatusLineText, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(22)
+                ViewGroup.LayoutParams.WRAP_CONTENT
         ));
         terminalAccessoryBar = createAccessoryBar();
         root.addView(terminalAccessoryBar, new LinearLayout.LayoutParams(
@@ -1936,7 +1933,6 @@ public final class MainActivity extends Activity {
             connectTerminal(sessionName);
             refreshTerminalGroupSessions(sessionName);
             refreshTerminalSessionMeta(sessionName);
-            refreshTerminalConversation(sessionName);
         });
         inputField.post(() -> {
             inputField.requestFocus();
@@ -2029,44 +2025,11 @@ public final class MainActivity extends Activity {
                 dp(13)
         ));
         bar.addView(titleBlock, new LinearLayout.LayoutParams(0, dp(32), 1));
+        Button display = terminalToolButton("Aa", view -> promptSessionSettings(""));
+        display.setContentDescription("Terminal display settings");
+        bar.addView(display);
         bar.addView(terminalToolButton("☰", view -> showTerminalActions(sessionName)));
         return bar;
-    }
-
-    private void showTerminalView(int mode, boolean announce) {
-        terminalViewMode = mode;
-        if (terminalScroll == null || terminalText == null || terminalChatList == null) {
-            return;
-        }
-        terminalScroll.removeAllViews();
-        if (mode == TERMINAL_VIEW_CHAT) {
-            terminalScroll.addView(terminalChatList, new ScrollView.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-            ));
-            renderTerminalConversation();
-        } else {
-            terminalText.setHorizontallyScrolling(true);
-            terminalText.setMovementMethod(null);
-            terminalText.setGravity(Gravity.BOTTOM | Gravity.START);
-            terminalScroll.addView(terminalText, new ScrollView.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-            ));
-            renderTerminalNow();
-        }
-        if (terminalAccessoryBar != null) {
-            terminalAccessoryBar.setVisibility(View.VISIBLE);
-        }
-        if (terminalComposerTabs != null) {
-            terminalComposerTabs.setVisibility(View.VISIBLE);
-        }
-        if (inputField != null) {
-            inputField.setHint(mode == TERMINAL_VIEW_CHAT ? "message or command" : "type command or text");
-        }
-        if (announce) {
-            setStatus(mode == TERMINAL_VIEW_CHAT ? "Content view" : "Raw terminal mode");
-        }
     }
 
     private HorizontalScrollView createTerminalGroupBar() {
@@ -2222,7 +2185,7 @@ public final class MainActivity extends Activity {
         }
         terminalChatList.addView(conversationLiveTerminalPanel(), matchWrap());
         updateTerminalLivePanel();
-        if (terminalViewMode == TERMINAL_VIEW_CHAT && terminalFollowOutput && terminalScroll != null) {
+        if (terminalFollowOutput && terminalScroll != null) {
             terminalScroll.post(() -> terminalScroll.fullScroll(View.FOCUS_DOWN));
         }
     }
@@ -2397,7 +2360,6 @@ public final class MainActivity extends Activity {
             terminalConnectionText.setText("● connecting");
             terminalConnectionText.setTextColor(COLOR_ACCENT_WARM);
         }
-        updateTerminalLivePanel();
     }
 
     private String compactTerminalPath(String path) {
@@ -2549,7 +2511,7 @@ public final class MainActivity extends Activity {
                 new SheetAction("◎", "Status", () -> showRaw("Session status", () -> api.sessionStatus(sessionName))),
                 new SheetAction("✎", "Rename", () -> promptRenameSession(sessionName)),
                 new SheetAction("$", "Command", () -> promptSendCommand(sessionName)),
-                new SheetAction("Aa", "Display", () -> promptSessionSettings(sessionName)),
+                new SheetAction("Aa", "Display", () -> promptSessionSettings("")),
                 new SheetAction("▰", "Project", () -> promptAddKanbanSession(sessionName))
         );
         addSheetActionSection(dialog, sheet, "PANES",
@@ -2571,13 +2533,10 @@ public final class MainActivity extends Activity {
     private void showTerminalActions(String sessionName) {
         Dialog dialog = new Dialog(this);
         LinearLayout sheet = bottomSheetContent(dialog, sessionName, "Terminal controls");
-        addSheetActionSection(dialog, sheet, "VIEW",
-                new SheetAction("◫", terminalViewMode == TERMINAL_VIEW_CHAT ? "Raw" : "Content", () ->
-                        showTerminalView(terminalViewMode == TERMINAL_VIEW_CHAT
-                                ? TERMINAL_VIEW_FULL : TERMINAL_VIEW_CHAT, true)),
+        addSheetActionSection(dialog, sheet, "TERMINAL",
                 new SheetAction("↻", "Reconnect", () -> connectTerminal(sessionName)),
                 new SheetAction("◎", "Status", () -> showRaw("Session status", () -> api.sessionStatus(sessionName))),
-                new SheetAction("Aa", "Display", () -> promptSessionSettings(sessionName)),
+                new SheetAction("Aa", "Display", () -> promptSessionSettings("")),
                 new SheetAction("↑", "Older", () -> scrollTerminalHistory(-terminalRows)),
                 new SheetAction("↓", "Newer", () -> scrollTerminalHistory(terminalRows))
         );
@@ -2652,7 +2611,7 @@ public final class MainActivity extends Activity {
         inputField = new EditText(this);
         inputField.setTextColor(COLOR_TEXT);
         inputField.setHintTextColor(COLOR_TEXT_DIM);
-        inputField.setHint(terminalViewMode == TERMINAL_VIEW_CHAT ? "Message" : "type command or text");
+        inputField.setHint("type command or text");
         inputField.setSingleLine(false);
         inputField.setMinLines(3);
         inputField.setMaxLines(5);
@@ -2876,11 +2835,15 @@ public final class MainActivity extends Activity {
     }
 
     private void promptSessionSettings(String sessionName) {
-        String key = sessionName.isEmpty() ? "default" : sessionName;
+        String key = "default";
         float currentSize = prefs.getFloat("terminal_font_size:" + key,
                 prefs.getFloat("terminal_font_size:default", 11f));
         float currentLineHeight = prefs.getFloat("terminal_line_height:" + key,
                 prefs.getFloat("terminal_line_height:default", 1.05f));
+        float currentLetterSpacing = prefs.getFloat("terminal_letter_spacing:" + key,
+                prefs.getFloat("terminal_letter_spacing:default", 0f));
+        int currentPadding = prefs.getInt("terminal_vertical_padding:" + key,
+                prefs.getInt("terminal_vertical_padding:default", 4));
         String currentFamily = prefs.getString("terminal_font_family:" + key,
                 prefs.getString("terminal_font_family:default", "monospace"));
         String currentTheme = prefs.getString("terminal_theme:" + key,
@@ -2890,8 +2853,8 @@ public final class MainActivity extends Activity {
         Dialog dialog = new Dialog(this);
         LinearLayout sheet = bottomSheetContent(
                 dialog,
-                sessionName.isEmpty() ? "Session display" : sessionName,
-                sessionName.isEmpty() ? "Default terminal typography" : "Terminal typography for this session"
+                "Terminal display",
+                "Applied to every terminal session"
         );
 
         TextView sizeValue = settingValue("" + Math.round(currentSize) + " sp");
@@ -2969,6 +2932,24 @@ public final class MainActivity extends Activity {
         lineHeight.setOnSeekBarChangeListener(seekListener(value -> lineValue.setText(value + "%")));
         sheet.addView(lineHeight, matchWrap());
 
+        TextView letterValue = settingValue(Math.round(currentLetterSpacing * 100f) + "%");
+        sheet.addView(settingHeader("LETTER SPACING", letterValue), matchWrap());
+        SeekBar letterSpacing = new SeekBar(this);
+        letterSpacing.setMin(-4);
+        letterSpacing.setMax(10);
+        letterSpacing.setProgress(Math.round(currentLetterSpacing * 100f));
+        letterSpacing.setOnSeekBarChangeListener(seekListener(value -> letterValue.setText(value + "%")));
+        sheet.addView(letterSpacing, matchWrap());
+
+        TextView paddingValue = settingValue(currentPadding + " dp");
+        sheet.addView(settingHeader("VERTICAL PADDING", paddingValue), matchWrap());
+        SeekBar padding = new SeekBar(this);
+        padding.setMin(0);
+        padding.setMax(12);
+        padding.setProgress(currentPadding);
+        padding.setOnSeekBarChangeListener(seekListener(value -> paddingValue.setText(value + " dp")));
+        sheet.addView(padding, matchWrap());
+
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
         Button reset = compactButton("Reset", view -> {
@@ -2976,6 +2957,8 @@ public final class MainActivity extends Activity {
                     .remove("terminal_font_size:" + key)
                     .remove("terminal_font_family:" + key)
                     .remove("terminal_line_height:" + key)
+                    .remove("terminal_letter_spacing:" + key)
+                    .remove("terminal_vertical_padding:" + key)
                     .remove("terminal_theme:" + key)
                     .apply();
             dialog.dismiss();
@@ -2988,10 +2971,14 @@ public final class MainActivity extends Activity {
         Button save = primaryButton("Save", view -> {
             float selectedSize = size.getProgress();
             float selectedHeight = lineHeight.getProgress() / 100f;
+            float selectedLetterSpacing = letterSpacing.getProgress() / 100f;
+            int selectedPadding = padding.getProgress();
             prefs.edit()
                     .putFloat("terminal_font_size:" + key, selectedSize)
                     .putString("terminal_font_family:" + key, selectedFamily[0])
                     .putFloat("terminal_line_height:" + key, selectedHeight)
+                    .putFloat("terminal_letter_spacing:" + key, selectedLetterSpacing)
+                    .putInt("terminal_vertical_padding:" + key, selectedPadding)
                     .putString("terminal_theme:" + key, selectedTheme[0])
                     .apply();
             dialog.dismiss();
@@ -3014,7 +3001,7 @@ public final class MainActivity extends Activity {
                     }
                 });
             }
-            showMessage("Session display saved");
+            showMessage("Terminal display saved");
         });
         LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(0, dp(44), 1);
         saveParams.leftMargin = dp(8);
@@ -3024,11 +3011,15 @@ public final class MainActivity extends Activity {
     }
 
     private void loadTerminalDisplaySettings(String sessionName) {
-        String key = sessionName == null || sessionName.isEmpty() ? "default" : sessionName;
+        String key = "default";
         terminalFontSizeSp = prefs.getFloat("terminal_font_size:" + key,
                 prefs.getFloat("terminal_font_size:default", 11f));
         terminalLineHeight = prefs.getFloat("terminal_line_height:" + key,
                 prefs.getFloat("terminal_line_height:default", 1.05f));
+        terminalLetterSpacing = prefs.getFloat("terminal_letter_spacing:" + key,
+                prefs.getFloat("terminal_letter_spacing:default", 0f));
+        terminalVerticalPaddingDp = prefs.getInt("terminal_vertical_padding:" + key,
+                prefs.getInt("terminal_vertical_padding:default", 4));
         terminalFontFamily = prefs.getString("terminal_font_family:" + key,
                 prefs.getString("terminal_font_family:default", "monospace"));
         terminalThemeId = prefs.getString("terminal_theme:" + key,
@@ -3042,24 +3033,19 @@ public final class MainActivity extends Activity {
             terminalText.setTextSize(terminalFontSizeSp);
             terminalText.setTypeface(typeface);
             terminalText.setLineSpacing(0, terminalLineHeight);
+            terminalText.setLetterSpacing(terminalLetterSpacing);
+            terminalText.setPadding(dp(2), dp(terminalVerticalPaddingDp), dp(2), dp(terminalVerticalPaddingDp));
             terminalText.setBackgroundColor(terminalBackgroundColor());
-        }
-        if (terminalLiveOutputText != null) {
-            terminalLiveOutputText.setTextSize(terminalFontSizeSp);
-            terminalLiveOutputText.setTypeface(typeface);
-            terminalLiveOutputText.setLineSpacing(0, terminalLineHeight);
-            terminalLiveOutputText.setBackgroundColor(terminalBackgroundColor());
         }
         if (terminalStatusLineText != null) {
             terminalStatusLineText.setTextSize(terminalFontSizeSp);
             terminalStatusLineText.setTypeface(typeface);
+            terminalStatusLineText.setLetterSpacing(terminalLetterSpacing);
+            terminalStatusLineText.setPadding(dp(2), dp(terminalVerticalPaddingDp / 2), dp(2), dp(terminalVerticalPaddingDp / 2));
             terminalStatusLineText.setBackgroundColor(terminalBackgroundColor());
         }
         if (terminalScroll != null) {
             terminalScroll.setBackgroundColor(terminalBackgroundColor());
-        }
-        if (terminalChatList != null && terminalViewMode == TERMINAL_VIEW_CHAT) {
-            renderTerminalConversation();
         }
         resizeTerminalToViewport(true);
     }
@@ -3928,8 +3914,7 @@ public final class MainActivity extends Activity {
         if (terminalText == null || terminalScroll == null) {
             return;
         }
-        TextView viewportText = terminalViewMode == TERMINAL_VIEW_CHAT && terminalLiveOutputText != null
-                ? terminalLiveOutputText : terminalText;
+        TextView viewportText = terminalText;
         int width = viewportText.getWidth();
         if (width <= 0) {
             width = terminalScroll.getWidth();
@@ -3951,10 +3936,6 @@ public final class MainActivity extends Activity {
         int usableWidth = Math.max(1, width - horizontalPadding);
         int cols = clamp((int) Math.floor(usableWidth / charWidth), MIN_TERMINAL_COLS, MAX_TERMINAL_COLS);
         int rows = clamp((height - verticalPadding) / lineHeight, MIN_TERMINAL_ROWS, MAX_TERMINAL_ROWS);
-        if (terminalLiveOutputText != null) {
-            terminalLiveOutputText.setMinHeight(rows * lineHeight);
-            terminalLiveOutputText.setGravity(Gravity.BOTTOM | Gravity.START);
-        }
         if (cols == terminalCols && rows == terminalRows && !forceSend) {
             return;
         }
@@ -3982,9 +3963,6 @@ public final class MainActivity extends Activity {
             normalized = normalized + TERMINAL_ENTER;
         }
         terminalFollowOutput = true;
-        if (activeSessionName != null) {
-            upsertConversationMessage(ConversationMessage.localUser(activeSessionName, text));
-        }
         sendTerminalInput(normalized);
         inputField.setText("");
         setStatus("Sent " + text.length() + " chars");
@@ -4176,7 +4154,7 @@ public final class MainActivity extends Activity {
             return false;
         }
         int movedLocally = Math.abs(terminalScroll.getScrollY() - terminalTouchStartScrollY);
-        int lineHeight = terminalLiveOutputText == null ? dp(16) : terminalLiveOutputText.getLineHeight();
+        int lineHeight = terminalText == null ? dp(16) : terminalText.getLineHeight();
         int lines = clamp(Math.round(Math.abs(distance) / Math.max(1, lineHeight)), 4, terminalRows);
         if (distance > 0 && !terminalScroll.canScrollVertically(-1) && movedLocally <= dp(24)) {
             terminalScroll.post(() -> scrollTerminalHistory(-lines));
@@ -4236,7 +4214,6 @@ public final class MainActivity extends Activity {
         if (terminalStatusLineText != null) {
             terminalStatusLineText.setText(terminalScreen.renderStatusLine());
         }
-        updateTerminalLivePanel();
         if (terminalFollowOutput) {
             terminalScroll.post(() -> terminalScroll.fullScroll(View.FOCUS_DOWN));
         }
@@ -4804,9 +4781,6 @@ public final class MainActivity extends Activity {
                 return;
             }
             if ("conversation-message".equals(type)) {
-                upsertConversationMessage(ConversationMessage.fromJson(event));
-                terminalEventStatus = "message received";
-                updateTerminalMeta();
                 return;
             }
             if ("hook-event".equals(type)) {
