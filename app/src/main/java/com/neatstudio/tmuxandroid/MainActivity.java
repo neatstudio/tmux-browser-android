@@ -293,20 +293,11 @@ public final class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         LinearLayout content = pageContent();
         List<String> serverUrls = savedServerUrls();
-        content.addView(createPageHeader(
-                serverUrls.size() + " nodes",
-                "Servers",
-                "＋ Add",
-                view -> promptCustomServer(),
-                "⋮",
-                "More navigation",
-                view -> showMainNavigation()
-        ));
+        content.addView(createServerPageHeader(serverUrls.size() + " nodes"));
         for (String url : serverUrls) {
             content.addView(serverProfileCard(url), spacedHeight(72, 0, 12));
         }
 
-        content.addView(createServerUtilityRow());
         scroll.addView(content);
         root.addView(scroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -496,18 +487,6 @@ public final class MainActivity extends Activity {
             String actionLabel,
             View.OnClickListener action
     ) {
-        return createPageHeader(eyebrow, titleText, actionLabel, action, null, null, null);
-    }
-
-    private View createPageHeader(
-            String eyebrow,
-            String titleText,
-            String actionLabel,
-            View.OnClickListener action,
-            String utilityLabel,
-            String utilityDescription,
-            View.OnClickListener utilityAction
-    ) {
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setGravity(Gravity.BOTTOM);
@@ -535,23 +514,49 @@ public final class MainActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 dp(38)
         ));
-        if (utilityAction != null) {
-            Button utility = terminalToolButton(utilityLabel, utilityAction);
-            utility.setContentDescription(utilityDescription);
-            LinearLayout.LayoutParams utilityParams = new LinearLayout.LayoutParams(dp(38), dp(38));
-            utilityParams.leftMargin = dp(6);
-            header.addView(utility, utilityParams);
-        }
         return header;
     }
 
-    private View createServerUtilityRow() {
-        LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(0, dp(4), 0, 0);
-        row.addView(compactButton("Probe all", view -> probeServerProfiles()));
-        row.addView(compactButton("Update", view -> renderUpdateScreen()));
-        return row;
+    private View createServerPageHeader(String eyebrow) {
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setGravity(Gravity.BOTTOM);
+        header.setPadding(dp(2), dp(6), dp(2), dp(18));
+
+        LinearLayout titleBlock = new LinearLayout(this);
+        titleBlock.setOrientation(LinearLayout.VERTICAL);
+        TextView eyebrowView = new TextView(this);
+        eyebrowView.setText(eyebrow.toUpperCase(java.util.Locale.ROOT));
+        eyebrowView.setTextColor(COLOR_TEXT_MUTED);
+        eyebrowView.setTextSize(10);
+        eyebrowView.setTypeface(Typeface.MONOSPACE);
+        TextView title = new TextView(this);
+        title.setText("Servers");
+        title.setTextColor(COLOR_TEXT);
+        title.setTextSize(25);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setIncludeFontPadding(false);
+        titleBlock.addView(eyebrowView);
+        titleBlock.addView(title);
+        header.addView(titleBlock, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+        addHeaderTool(header, "↻", "Refresh servers", view -> probeServerProfiles());
+        addHeaderTool(header, "＋", "Add server", view -> promptCustomServer());
+        addHeaderTool(header, "⋮", "More navigation", view -> showMainNavigation());
+        return header;
+    }
+
+    private void addHeaderTool(
+            LinearLayout header,
+            String label,
+            String description,
+            View.OnClickListener action
+    ) {
+        Button button = terminalToolButton(label, action);
+        button.setContentDescription(description);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(38), dp(38));
+        params.leftMargin = dp(4);
+        header.addView(button, params);
     }
 
     private View createSessionPageHeader() {
