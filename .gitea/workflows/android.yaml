@@ -33,6 +33,88 @@ jobs:
           if ! command -v git >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1; then
             install_packages git curl unzip
           fi
+
+          REF="${GITHUB_REF:-}"
+          REF_NAME="${GITHUB_REF_NAME:-}"
+          if [ -z "${REF_NAME}" ]; then
+            REF_NAME="${REF##*/}"
+          fi
+          if [ "${REF#refs/tags/v}" != "${REF}" ]; then
+            if [ -z "${CLONE_TOKEN:-}" ]; then
+              echo "Gitea release publishing requires TMUX_GITEA_TOKEN." >&2
+              exit 1
+            fi
+
+            TAG="${REF_NAME}"
+            VERSION_NAME="${TAG#v}"
+            MAJOR="$(printf '%s' "${VERSION_NAME}" | cut -d. -f1)"
+            MINOR="$(printf '%s' "${VERSION_NAME}" | cut -d. -f2)"
+            PATCH="$(printf '%s' "${VERSION_NAME}" | cut -d. -f3)"
+            VERSION_CODE=$((MAJOR * 1000000 + MINOR * 1000 + PATCH))
+            GITHUB_APK_URL="https://github.com/neatstudio/tmux-browser-android/releases/download/${TAG}/tmux-android.apk"
+
+            mkdir -p release
+            ATTEMPT=1
+            while [ "${ATTEMPT}" -le 30 ]; do
+              if curl -fsSL "${GITHUB_APK_URL}" -o release/tmux-android.apk; then
+                break
+              fi
+              rm -f release/tmux-android.apk
+              echo "Waiting for GitHub release ${TAG} (${ATTEMPT}/30)..."
+              sleep 10
+              ATTEMPT=$((ATTEMPT + 1))
+            done
+            if [ ! -s release/tmux-android.apk ]; then
+              echo "GitHub release APK unavailable for ${TAG}." >&2
+              exit 1
+            fi
+
+            SHA256="$(sha256sum release/tmux-android.apk | cut -d ' ' -f1)"
+            APK_URL="https://gitea.neatcn.com/tmux/tmux-browser-android/releases/download/${TAG}/tmux-android.apk"
+            RELEASE_PAGE_URL="https://gitea.neatcn.com/tmux/tmux-browser-android/releases/tag/${TAG}"
+            cat > release/latest.json << JSON
+            {
+              "versionCode": ${VERSION_CODE},
+              "versionName": "${VERSION_NAME}",
+              "apkUrl": "${APK_URL}",
+              "sha256": "${SHA256}",
+              "releasePageUrl": "${RELEASE_PAGE_URL}",
+              "minSdk": 26
+            }
+          JSON
+
+            API_ROOT="https://gitea.neatcn.com/api/v1/repos/tmux/tmux-browser-android"
+            RELEASE_BODY='{"tag_name":"'"${TAG}"'","target_commitish":"main","name":"tmux Android '"${VERSION_NAME}"'","body":"Android APK for tmux-ui remote testing.","draft":false,"prerelease":false}'
+            if ! curl -fsSL -X POST \
+              -H "Authorization: token ${CLONE_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "${RELEASE_BODY}" \
+              "${API_ROOT}/releases" \
+              -o /tmp/gitea-release.json; then
+              curl -fsSL -H "Authorization: token ${CLONE_TOKEN}" \
+                "${API_ROOT}/releases/tags/${TAG}" \
+                -o /tmp/gitea-release.json
+            fi
+            RELEASE_ID="$(sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p' /tmp/gitea-release.json | head -1)"
+            if [ -z "${RELEASE_ID}" ]; then
+              echo "Cannot resolve Gitea release id for ${TAG}." >&2
+              exit 1
+            fi
+            curl -fsSL -X POST -H "Authorization: token ${CLONE_TOKEN}" \
+              -F "attachment=@release/tmux-android.apk;type=application/vnd.android.package-archive" \
+              "${API_ROOT}/releases/${RELEASE_ID}/assets?name=tmux-android.apk" \
+              -o /tmp/gitea-apk-asset.json
+            curl -fsSL -X POST -H "Authorization: token ${CLONE_TOKEN}" \
+              -F "attachment=@release/latest.json;type=application/json" \
+              "${API_ROOT}/releases/${RELEASE_ID}/assets?name=latest.json" \
+              -o /tmp/gitea-latest-asset.json
+            echo "Mirrored GitHub release ${TAG} to Gitea."
+            echo "versionCode=${VERSION_CODE}"
+            echo "versionName=${VERSION_NAME}"
+            echo "sha256=${SHA256}"
+            exit 0
+          fi
+
           if ! command -v java >/dev/null 2>&1; then
             if command -v apk >/dev/null 2>&1; then
               install_packages openjdk17-jdk
