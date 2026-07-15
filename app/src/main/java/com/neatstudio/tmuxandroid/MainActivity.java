@@ -2,11 +2,11 @@ package com.neatstudio.tmuxandroid;
 
 import android.Manifest;
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
@@ -754,7 +754,7 @@ public final class MainActivity extends Activity {
     }
 
     private void confirmRemoveSavedServer(String url) {
-        new AlertDialog.Builder(this)
+        new AppDialogBuilder()
                 .setTitle("Remove server")
                 .setMessage("Remove " + url + " from this device?")
                 .setNegativeButton("Cancel", null)
@@ -789,7 +789,7 @@ public final class MainActivity extends Activity {
 
     private void showMainNavigation() {
         String[] items = {"Projects", "Tools", "Update", "About"};
-        new AlertDialog.Builder(this)
+        new AppDialogBuilder()
                 .setTitle("tmuxctl")
                 .setItems(items, (dialog, which) -> {
                     if (which == 0) {
@@ -1320,9 +1320,10 @@ public final class MainActivity extends Activity {
     }
 
     private LinearLayout actionPanel(Button... buttons) {
+        boolean compact = PAGE_TOOLS.equals(activeMainPage) || PAGE_UPDATE.equals(activeMainPage);
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(6), dp(6), dp(6), dp(1));
+        panel.setPadding(dp(compact ? 4 : 6), dp(compact ? 4 : 6), dp(compact ? 4 : 6), 0);
         panel.setBackground(panelBackground());
         LinearLayout row = null;
         for (int index = 0; index < buttons.length; index++) {
@@ -1331,17 +1332,21 @@ public final class MainActivity extends Activity {
                 row.setOrientation(LinearLayout.HORIZONTAL);
                 panel.addView(row, matchWrap());
             }
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(38), 1);
-            params.leftMargin = dp(3);
-            params.rightMargin = dp(3);
-            params.bottomMargin = dp(6);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(compact ? 32 : 38), 1);
+            params.leftMargin = dp(compact ? 2 : 3);
+            params.rightMargin = dp(compact ? 2 : 3);
+            params.bottomMargin = dp(compact ? 4 : 6);
+            if (compact) {
+                buttons[index].setTextSize(10);
+                buttons[index].setPadding(dp(6), 0, dp(6), 0);
+            }
             row.addView(buttons[index], params);
         }
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         );
-        params.bottomMargin = dp(8);
+        params.bottomMargin = dp(compact ? 6 : 8);
         panel.setLayoutParams(params);
         return panel;
     }
@@ -1855,7 +1860,7 @@ public final class MainActivity extends Activity {
     }
 
     private void confirmKill(String sessionName) {
-        new AlertDialog.Builder(this)
+        new AppDialogBuilder()
                 .setTitle("Kill session")
                 .setMessage("Kill tmux session \"" + sessionName + "\"?")
                 .setNegativeButton("Cancel", null)
@@ -3051,7 +3056,7 @@ public final class MainActivity extends Activity {
         EditText project = formField(form, "Project", "");
         EditText agent = formField(form, "Agent/session name", "");
         EditText kill = formField(form, "Kill too: true or false", "false");
-        new AlertDialog.Builder(this)
+        new AppDialogBuilder()
                 .setTitle("Remove kanban session")
                 .setView(form)
                 .setNegativeButton("Cancel", null)
@@ -3371,7 +3376,7 @@ public final class MainActivity extends Activity {
         EditText body = formField(form, "Message", "");
         body.setMinLines(3);
         body.setSingleLine(false);
-        new AlertDialog.Builder(this)
+        new AppDialogBuilder()
                 .setTitle("Send group message")
                 .setView(form)
                 .setNegativeButton("Cancel", null)
@@ -3392,7 +3397,7 @@ public final class MainActivity extends Activity {
         LinearLayout form = formRoot();
         EditText project = formField(form, "Project", "");
         EditText message = formField(form, "Message ID", "");
-        new AlertDialog.Builder(this)
+        new AppDialogBuilder()
                 .setTitle("Scan group message")
                 .setView(form)
                 .setNegativeButton("Cancel", null)
@@ -3417,7 +3422,7 @@ public final class MainActivity extends Activity {
         EditText body = formField(form, "Body", "");
         body.setMinLines(2);
         body.setSingleLine(false);
-        new AlertDialog.Builder(this)
+        new AppDialogBuilder()
                 .setTitle("Post hook event")
                 .setView(form)
                 .setNegativeButton("Cancel", null)
@@ -3436,7 +3441,7 @@ public final class MainActivity extends Activity {
         LinearLayout form = formRoot();
         EditText session = formField(form, "Session optional", "");
         EditText url = formField(form, "Image URL", "");
-        new AlertDialog.Builder(this)
+        new AppDialogBuilder()
                 .setTitle("Upload image URL")
                 .setView(form)
                 .setNegativeButton("Cancel", null)
@@ -3453,7 +3458,7 @@ public final class MainActivity extends Activity {
         EditText session = new EditText(this);
         session.setSingleLine(true);
         session.setHint("session optional");
-        new AlertDialog.Builder(this)
+        new AppDialogBuilder()
                 .setTitle("Upload image file")
                 .setView(session)
                 .setNegativeButton("Cancel", null)
@@ -3479,7 +3484,7 @@ public final class MainActivity extends Activity {
         LinearLayout form = formRoot();
         EditText path = formField(form, "Path", "");
         EditText basePath = formField(form, "Base path optional", "");
-        new AlertDialog.Builder(this)
+        new AppDialogBuilder()
                 .setTitle("Image preview info")
                 .setView(form)
                 .setNegativeButton("Cancel", null)
@@ -3496,7 +3501,7 @@ public final class MainActivity extends Activity {
         LinearLayout form = formRoot();
         EditText path = formField(form, "Path", "");
         EditText basePath = formField(form, "Base path optional", "");
-        new AlertDialog.Builder(this)
+        new AppDialogBuilder()
                 .setTitle("Open image preview")
                 .setView(form)
                 .setNegativeButton("Cancel", null)
@@ -3531,7 +3536,7 @@ public final class MainActivity extends Activity {
         text.append('\n');
         text.append(permissionSummary());
 
-        new AlertDialog.Builder(this)
+        new AppDialogBuilder()
                 .setTitle("Permissions / update")
                 .setMessage(text.toString())
                 .setNegativeButton("Close", null)
@@ -3569,7 +3574,7 @@ public final class MainActivity extends Activity {
                 "Preview manual: " + BuildConfig.DEFAULT_PREVIEW_UPDATE_URL,
                 "Custom URL"
         };
-        new AlertDialog.Builder(this)
+        new AppDialogBuilder()
                 .setTitle("Update source")
                 .setItems(items, (dialog, which) -> {
                     if (which == 0) {
@@ -3704,7 +3709,7 @@ public final class MainActivity extends Activity {
                     image.setImageBitmap(bitmap);
                     image.setAdjustViewBounds(true);
                     image.setPadding(dp(8), dp(8), dp(8), dp(8));
-                    new AlertDialog.Builder(this)
+                    new AppDialogBuilder()
                             .setTitle("Image preview")
                             .setView(image)
                             .setPositiveButton("Close", null)
@@ -3742,7 +3747,7 @@ public final class MainActivity extends Activity {
         input.setHint(hint);
         input.setText(value);
         input.setSelectAllOnFocus(true);
-        new AlertDialog.Builder(this)
+        new AppDialogBuilder()
                 .setTitle(title)
                 .setView(input)
                 .setNegativeButton("Cancel", null)
@@ -3800,7 +3805,7 @@ public final class MainActivity extends Activity {
         ScrollView scroll = new ScrollView(this);
         TextView content = new TextView(this);
         content.setText(text == null || text.isEmpty() ? "(empty)" : text);
-        content.setTextColor(Color.rgb(20, 24, 30));
+        content.setTextColor(COLOR_TEXT);
         content.setTextSize(12);
         content.setTypeface(Typeface.MONOSPACE);
         content.setTextIsSelectable(true);
@@ -3809,11 +3814,148 @@ public final class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         ));
-        new AlertDialog.Builder(this)
+        new AppDialogBuilder()
                 .setTitle(title)
                 .setView(scroll)
                 .setPositiveButton("Close", null)
                 .show();
+    }
+
+    private final class AppDialogBuilder {
+        private String title = "";
+        private String message;
+        private View content;
+        private String[] items;
+        private DialogInterface.OnClickListener itemAction;
+        private String negativeLabel;
+        private DialogInterface.OnClickListener negativeAction;
+        private String neutralLabel;
+        private DialogInterface.OnClickListener neutralAction;
+        private String positiveLabel;
+        private DialogInterface.OnClickListener positiveAction;
+
+        AppDialogBuilder setTitle(String value) {
+            title = value;
+            return this;
+        }
+
+        AppDialogBuilder setMessage(String value) {
+            message = value;
+            return this;
+        }
+
+        AppDialogBuilder setView(View value) {
+            content = value;
+            return this;
+        }
+
+        AppDialogBuilder setItems(String[] values, DialogInterface.OnClickListener action) {
+            items = values;
+            itemAction = action;
+            return this;
+        }
+
+        AppDialogBuilder setNegativeButton(String label, DialogInterface.OnClickListener action) {
+            negativeLabel = label;
+            negativeAction = action;
+            return this;
+        }
+
+        AppDialogBuilder setNeutralButton(String label, DialogInterface.OnClickListener action) {
+            neutralLabel = label;
+            neutralAction = action;
+            return this;
+        }
+
+        AppDialogBuilder setPositiveButton(String label, DialogInterface.OnClickListener action) {
+            positiveLabel = label;
+            positiveAction = action;
+            return this;
+        }
+
+        Dialog show() {
+            Dialog dialog = new Dialog(MainActivity.this);
+            LinearLayout sheet = bottomSheetContent(dialog, title, dialogSubtitle());
+            if (message != null) {
+                TextView body = bodyText(message);
+                body.setTextSize(12);
+                body.setTextIsSelectable(true);
+                body.setPadding(dp(2), dp(4), dp(2), dp(8));
+                sheet.addView(body, matchWrap());
+            }
+            if (content != null) {
+                LinearLayout.LayoutParams contentParams = matchWrap();
+                contentParams.bottomMargin = dp(10);
+                sheet.addView(content, contentParams);
+            }
+            if (items != null) {
+                for (int index = 0; index < items.length; index++) {
+                    final int selected = index;
+                    Button choice = toolbarButton(items[index], view -> {
+                        dialog.dismiss();
+                        if (itemAction != null) {
+                            itemAction.onClick(dialog, selected);
+                        }
+                    });
+                    choice.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+                    choice.setTextSize(11);
+                    LinearLayout.LayoutParams choiceParams = matchWrap();
+                    choiceParams.height = dp(42);
+                    choiceParams.bottomMargin = dp(6);
+                    sheet.addView(choice, choiceParams);
+                }
+            }
+            addDialogActions(dialog, sheet);
+            showBottomSheet(dialog, sheet, null);
+            return dialog;
+        }
+
+        private String dialogSubtitle() {
+            if (items != null) {
+                return "Choose an option";
+            }
+            if (content != null) {
+                return "Complete the fields below";
+            }
+            return "Confirm this action";
+        }
+
+        private void addDialogActions(Dialog dialog, LinearLayout sheet) {
+            if (negativeLabel == null && neutralLabel == null && positiveLabel == null) {
+                return;
+            }
+            LinearLayout actions = new LinearLayout(MainActivity.this);
+            actions.setOrientation(LinearLayout.HORIZONTAL);
+            actions.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+            addDialogAction(actions, dialog, neutralLabel, neutralAction, DialogInterface.BUTTON_NEUTRAL, false);
+            addDialogAction(actions, dialog, negativeLabel, negativeAction, DialogInterface.BUTTON_NEGATIVE, false);
+            addDialogAction(actions, dialog, positiveLabel, positiveAction, DialogInterface.BUTTON_POSITIVE,
+                    "Remove".equals(positiveLabel) || "Kill".equals(positiveLabel) || "Delete".equals(positiveLabel));
+            sheet.addView(actions, spacedMatchWrap(4, 0));
+        }
+
+        private void addDialogAction(
+                LinearLayout actions,
+                Dialog dialog,
+                String label,
+                DialogInterface.OnClickListener action,
+                int which,
+                boolean danger
+        ) {
+            if (label == null) {
+                return;
+            }
+            Button button = compactButton(label, view -> {
+                dialog.dismiss();
+                if (action != null) {
+                    action.onClick(dialog, which);
+                }
+            });
+            if (danger) {
+                button.setTextColor(COLOR_DANGER);
+            }
+            actions.addView(button);
+        }
     }
 
     private LinearLayout formRoot() {
