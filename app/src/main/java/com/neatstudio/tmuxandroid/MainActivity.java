@@ -1053,11 +1053,15 @@ public final class MainActivity extends Activity {
 
         LinearLayout actions = new LinearLayout(this);
         actions.setOrientation(LinearLayout.HORIZONTAL);
+        actions.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
         Button copy = compactButton("Copy commands", view -> copyText("Server install", SERVER_INSTALL_COMMANDS));
-        actions.addView(copy, new LinearLayout.LayoutParams(0, dp(40), 1));
+        actions.addView(copy, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(32)));
         Button add = compactButton("Add server", view -> promptCustomServer());
-        LinearLayout.LayoutParams addParams = new LinearLayout.LayoutParams(0, dp(40), 1);
-        addParams.leftMargin = dp(7);
+        LinearLayout.LayoutParams addParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                dp(32)
+        );
+        addParams.leftMargin = dp(5);
         actions.addView(add, addParams);
         panel.addView(actions, spacedMatchWrap(10, 0));
 
@@ -1320,33 +1324,40 @@ public final class MainActivity extends Activity {
     }
 
     private LinearLayout actionPanel(Button... buttons) {
-        boolean compact = PAGE_TOOLS.equals(activeMainPage) || PAGE_UPDATE.equals(activeMainPage);
+        final int columns = 3;
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(dp(compact ? 4 : 6), dp(compact ? 4 : 6), dp(compact ? 4 : 6), 0);
+        panel.setPadding(dp(4), dp(4), dp(4), 0);
         panel.setBackground(panelBackground());
         LinearLayout row = null;
         for (int index = 0; index < buttons.length; index++) {
-            if (index % 2 == 0) {
+            if (index % columns == 0) {
                 row = new LinearLayout(this);
                 row.setOrientation(LinearLayout.HORIZONTAL);
                 panel.addView(row, matchWrap());
             }
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(compact ? 32 : 38), 1);
-            params.leftMargin = dp(compact ? 2 : 3);
-            params.rightMargin = dp(compact ? 2 : 3);
-            params.bottomMargin = dp(compact ? 4 : 6);
-            if (compact) {
-                buttons[index].setTextSize(10);
-                buttons[index].setPadding(dp(6), 0, dp(6), 0);
-            }
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(32), 1);
+            params.leftMargin = dp(2);
+            params.rightMargin = dp(2);
+            params.bottomMargin = dp(4);
+            buttons[index].setTextSize(9);
+            buttons[index].setPadding(dp(4), 0, dp(4), 0);
             row.addView(buttons[index], params);
+        }
+        int remainder = buttons.length % columns;
+        if (row != null && remainder != 0) {
+            for (int index = remainder; index < columns; index++) {
+                LinearLayout.LayoutParams spacerParams = new LinearLayout.LayoutParams(0, dp(32), 1);
+                spacerParams.leftMargin = dp(2);
+                spacerParams.rightMargin = dp(2);
+                row.addView(new View(this), spacerParams);
+            }
         }
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
         );
-        params.bottomMargin = dp(compact ? 6 : 8);
+        params.bottomMargin = dp(6);
         panel.setLayoutParams(params);
         return panel;
     }
